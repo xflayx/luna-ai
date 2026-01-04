@@ -1,0 +1,21 @@
+# ===== Core =====
+python-dotenv
+requests
+Pillow
+
+# ===== IA / LLM =====
+groq
+
+# ===== Voz =====
+SpeechRecognition
+pyttsx3
+pyaudio
+
+# ===== Automação =====
+pyautogui
+
+# ===== Interface =====
+streamlit
+
+# ===== Utilidades =====
+numpy
