@@ -1,10 +1,6 @@
-# config/state.py
-
 from datetime import datetime
 
-# ===============================
-# CONTROLE DE SKILLS (JÁ EXISTENTE)
-# ===============================
+# Define quais skills estão ativas
 SKILLS_STATE = {
     "macros": True,
     "vision": True,
@@ -12,9 +8,6 @@ SKILLS_STATE = {
     "news": True
 }
 
-# ===============================
-# ESTADO GLOBAL DA LUNA
-# ===============================
 class LunaState:
     def __init__(self):
         self.reset()
@@ -22,63 +15,26 @@ class LunaState:
     def reset(self):
         self.last_intent = None
         self.last_command = None
+        self.historico = [] 
+        self.max_historico = 5
+        self.esperando_nome_sequencia = False # Para a gravação
 
-        self.last_vision = None
-        self.last_updated = None
+    def adicionar_ao_historico(self, usuario, luna):
+        self.historico.append({"usuario": usuario, "luna": luna})
+        if len(self.historico) > self.max_historico:
+            self.historico.pop(0)
 
-    # ===============================
-    # ATUALIZAÇÕES
-    # ===============================
+    def obter_contexto_curto(self):
+        if not self.historico:
+            return ""
+        contexto = "\nContexto anterior:\n"
+        for h in self.historico:
+            contexto += f"Usuário: {h['usuario']} | Luna: {h['luna']}\n"
+        return contexto
+
     def update_intent(self, intent: str, command: str):
         self.last_intent = intent
         self.last_command = command
         self.last_updated = datetime.now().isoformat()
 
-    def update_vision(self, vision_result: dict):
-        """
-        Espera receber o output estruturado da vision:
-        {
-          summary, tags, confidence, timestamp
-        }
-        """
-        if not vision_result:
-            return
-
-        self.last_vision = {
-            "summary": vision_result.get("summary"),
-            "tags": vision_result.get("tags", []),
-            "confidence": vision_result.get("confidence", 0.0),
-            "timestamp": vision_result.get("timestamp")
-        }
-
-        self.last_updated = datetime.now().isoformat()
-
-    # ===============================
-    # HELPERS
-    # ===============================
-    def has_recent_vision(self) -> bool:
-        return self.last_vision is not None
-
-    def get_last_vision_summary(self) -> str | None:
-        if not self.last_vision:
-            return None
-        return self.last_vision.get("summary")
-
-    def get_last_vision_tags(self) -> list:
-        if not self.last_vision:
-            return []
-        return self.last_vision.get("tags", [])
-
-    def debug(self) -> dict:
-        return {
-            "last_intent": self.last_intent,
-            "last_command": self.last_command,
-            "last_vision": self.last_vision,
-            "last_updated": self.last_updated
-        }
-
-
-# ===============================
-# INSTÂNCIA GLOBAL (SINGLETON SIMPLES)
-# ===============================
 STATE = LunaState()

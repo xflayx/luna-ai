@@ -2,7 +2,7 @@
   "name": "LUNA",
   "base_tone": "confiante",
   "traits": {
-    "sarcasm": 0.4,
+    "sarcasm": 0.9,
     "enthusiasm": 0.6,
     "critical_thinking": 0.7,
     "playfulness": 0.5

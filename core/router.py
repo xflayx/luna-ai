@@ -1,32 +1,45 @@
 from config.state import SKILLS_STATE, STATE
-from skills.macros import executar_macro
+from skills.macros import executar_macro, iniciar_gravacao_sequencia, parar_gravacao_sequencia, finalizar_salvamento
 from skills.vision import analisar_tela
 from skills.price import responder_preco
-from skills.news import buscar_noticias
-
+from core.opinion_engine import gerar_opiniao
 
 def processar_comando(cmd, intent):
-    if intent == "macro" and SKILLS_STATE["macros"]:
-        nome = cmd.replace("luna", "").replace("executar", "").strip()
-        return executar_macro(nome)
+    if not cmd.startswith("luna"):
+        return None
 
-    if intent == "visao" and SKILLS_STATE["vision"]:
-        resultado = analisar_tela(cmd)
+    comando_limpo = cmd.replace("luna", "", 1).strip()
+    resposta = None
 
-        # 🔥 ESSENCIAL: salvar estado
-        STATE.update_vision(resultado)
-        STATE.update_intent(intent, cmd)
+    # A. FLUXO DE SEQUÊNCIAS (Prioridade para o nome se estiver salvando)
+    if getattr(STATE, 'esperando_nome_sequencia', False):
+        STATE.esperando_nome_sequencia = False
+        resposta = finalizar_salvamento(comando_limpo)
+    
+    elif intent == "sequencia" or intent == "macro":
+        if "gravar" in comando_limpo:
+            resposta = iniciar_gravacao_sequencia()
+        elif "pare" in comando_limpo or "parar" in comando_limpo:
+            STATE.esperando_nome_sequencia = True
+            resposta = parar_gravacao_sequencia()
+        else:
+            nome = comando_limpo.replace("executar", "").replace("sequencia", "").replace("sequência", "").strip()
+            resposta = executar_macro(nome)
 
-        # 🔥 ESSENCIAL: retornar SOMENTE STRING
-        return resultado.get(
-            "summary",
-            "Não consegui entender o que está na tela."
-        )
+    # B. VISÃO (RESTAURADA)
+    elif intent == "visao" and SKILLS_STATE["vision"]:
+        resposta = analisar_tela(comando_limpo)
 
-    if intent == "preco" and SKILLS_STATE["price"]:
-        return responder_preco(cmd)
+    # C. OUTRAS SKILLS
+    elif intent == "preco" and SKILLS_STATE["price"]:
+        resposta = responder_preco(comando_limpo)
+    elif intent == "conversa":
+        resposta = gerar_opiniao(comando_limpo)
 
-    if intent == "noticia" and SKILLS_STATE["news"]:
-        return buscar_noticias(cmd)
+    # D. MEMÓRIA
+    if resposta:
+        STATE.adicionar_ao_historico(comando_limpo, resposta)
+        STATE.update_intent(intent, comando_limpo)
+        return resposta
 
-    return "Essa função está desativada ou não reconhecida."
+    return "Não entendi o comando."

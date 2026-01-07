@@ -2,6 +2,7 @@ import os
 import re
 import requests
 import unicodedata
+from core.opinion_engine import gerar_opiniao
 
 # =============================
 # CONFIG
@@ -130,17 +131,19 @@ def responder_preco(frase: str) -> str:
 
     resultado = buscar_preco(cripto)
 
-    # Se o resultado for None (moeda não encontrada ou erro de preço), avisa o usuário sem crashar
     if not resultado:
-        return f"Não encontrei dados de preço para **{cripto}**. Verifique se o nome está correto."
+        return f"Não encontrei dados de preço para {cripto}."
 
     tendencia = "subindo 📈" if resultado["change_24h"] > 0 else "caindo 📉"
-
-    return (
-        f"{resultado['name']} ({resultado['symbol']}) está em "
-        f"**{resultado['price']:.2f} dólares** agora.\n"
-        f"Variação 24h: **{resultado['change_24h']}%** ({tendencia})."
+    
+    # Texto base com os dados
+    texto_base = (
+        f"O {resultado['name']} está custando {resultado['price']} dólares, "
+        f"com uma variação de {resultado['change_24h']}% nas últimas 24 horas, ou seja, está {tendencia}."
     )
 
-def executar_price(frase: str) -> str:
-    return responder_preco(frase)
+    # --- NOVIDADE: Chama a opinião da Luna ---
+    # Passamos o texto_base para a Luna analisar o contexto do preço
+    opiniao_luna = gerar_opiniao(texto_base)
+
+    return f"{texto_base} {opiniao_luna}"

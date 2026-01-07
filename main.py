@@ -27,4 +27,6 @@ while True:
     resposta = processar_comando(cmd, intent)
 
     if resposta:
-        falar(resposta)
+        falar(resposta) # Isso aciona o pyttsx3
+    else:
+        print("⚠️ Nenhuma resposta gerada para falar.")
