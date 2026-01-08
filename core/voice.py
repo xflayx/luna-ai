@@ -6,6 +6,8 @@ rec = sr.Recognizer()
 mic = sr.Microphone()
 
 def falar(texto):
+    # Remove asteriscos para a Luna não ler "asterisco"
+    texto_limpo = texto.replace("*", "").replace("#", "")
     """
     Converte texto em áudio. 
     Inicializa a engine localmente para evitar travamentos em loops longos.

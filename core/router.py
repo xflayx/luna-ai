@@ -28,6 +28,7 @@ def processar_comando(cmd, intent):
 
     # B. VISÃO (RESTAURADA)
     elif intent == "visao" and SKILLS_STATE["vision"]:
+        print(f"➡️  Acionando VISÃO para: {comando_limpo}")
         resposta = analisar_tela(comando_limpo)
 
     # C. OUTRAS SKILLS

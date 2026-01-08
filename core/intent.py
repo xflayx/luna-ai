@@ -16,8 +16,12 @@ def detectar_intencao(cmd):
         return "sequencia" # O router tratará o início da gravação
 
     # 2. VISÃO (Analise de tela) - Restaurado e Isolado
-    if any(p in cmd for p in ["analise", "analisar", "veja", "olhe", "o que é isso", "está vendo"]):
-        return "visao"
+    verbos_analise = ["analise", "analisar", "veja", "olhe", "o que", "diga", "recomende", "leia", "resuma"]
+    objetos_visao = ["tela", "imagem", "isso", "aqui", "vendo", "monitor"]
+
+    if any(v in cmd for v in verbos_analise):
+        if any(o in cmd for o in objetos_visao):
+            return "visao"
 
     # 3. PREÇO (Criptomoedas/Mercado)
     if any(p in cmd for p in ["preço", "valor", "quanto está", "cotação"]):
