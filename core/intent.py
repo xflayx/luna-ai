@@ -1,43 +1,26 @@
 # core/intent.py
 
 def detectar_intencao(cmd):
-    """
-    Analisa o comando para identificar a intenção, priorizando ações de estado (gravação)
-    sobre ações de execução.
-    """
-    cmd = cmd.lower()
+    cmd = cmd.lower().strip()
 
-    # 1. PRIORIDADE: Gravação de Sequência (Ações de Estado)
-    # Verificamos primeiro 'parar' ou 'gravar' para evitar que caia na execução normal
-    if any(p in cmd for p in ["pare a gravação", "parar gravação", "parar gravação"]):
-        return "sequencia" # O router tratará o comando 'pare'
-    
-    if "gravar" in cmd:
-        return "sequencia" # O router tratará o início da gravação
-
-    # 2. VISÃO (Analise de tela) - Restaurado e Isolado
-    verbos_analise = ["analise", "analisar", "veja", "olhe", "o que", "diga", "recomende", "leia", "resuma"]
-    objetos_visao = ["tela", "imagem", "isso", "aqui", "vendo", "monitor"]
-
-    if any(v in cmd for v in verbos_analise):
-        if any(o in cmd for o in objetos_visao):
-            return "visao"
-
-    # 3. PREÇO (Criptomoedas/Mercado)
-    if any(p in cmd for p in ["preço", "valor", "quanto está", "cotação"]):
-        return "preco"
-
-    # 4. SEQUENCIA (Execução de automação)
-    # Agora só chega aqui se não for um comando de 'gravar' ou 'parar'
-    if any(p in cmd for p in ["sequência", "sequencia", "executar"]):
+    # 1. ESTADO DE EXECUÇÃO (Prioridade Máxima)
+    # Se houver números ou palavras de execução, tratamos como sequência
+    if any(n in cmd for n in ["uma", "duas", "três", "cinco", "dez"]) or any(char.isdigit() for char in cmd):
         return "sequencia"
 
-    # 5. NOTÍCIA
-    if any(p in cmd for p in ["notícia", "pesquise", "saiba sobre", "aconteceu"]):
-        return "noticia"
+    if any(p in cmd for p in ["executar", "sequência", "sequencia", "gravar", "parar"]):
+        return "sequencia"
 
-    # 6. CONVERSA (Presença e Personalidade)
-    if any(p in cmd for p in ["ouvindo", "oi", "olá", "luna", "está aí", "bom dia", "boa noite"]):
+    # 2. VISÃO
+    if any(v in cmd for v in ["analise", "analisar", "veja", "olhe"]) and any(o in cmd for o in ["tela", "imagem"]):
+        return "visao"
+
+    # 3. PREÇO
+    if any(p in cmd for p in ["preço", "valor", "cotação"]):
+        return "preco"
+
+    # 4. CONVERSA (Agora por último, para não "roubar" o comando)
+    if any(p in cmd for p in ["luna", "oi", "olá", "bom dia"]):
         return "conversa"
 
     return None

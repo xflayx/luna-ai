@@ -48,7 +48,6 @@ def ouvir():
     with mic as source:
         # Ajusta para o ruído ambiente antes de ouvir
         rec.adjust_for_ambient_noise(source, duration=0.5)
-        print("Listening...")
         try:
             audio = rec.listen(source, timeout=5, phrase_time_limit=10)
             # Converte para texto usando a API do Google (em português)
