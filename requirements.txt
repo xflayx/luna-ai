@@ -1,21 +1,57 @@
-# ===== Core =====
-python-dotenv
-requests
-Pillow
+# ============================================
+# LUNA AI - REQUIREMENTS.TXT
+# ============================================
 
-# ===== IA / LLM =====
-groq
+# --- CORE / ESSENCIAIS ---
+python-dotenv==1.0.0
 
-# ===== Voz =====
-SpeechRecognition
-pyttsx3
-pyaudio
+# --- VOZ (Speech Recognition & TTS) ---
+SpeechRecognition==3.10.1
+pyttsx3==2.90
+pyaudio==0.2.14
 
-# ===== Automação =====
-pyautogui
+# --- LLM / AI ---
+google-genai==0.8.3
+groq==0.11.0
 
-# ===== Interface =====
-streamlit
+# --- INTERFACE / GUI ---
+eel==0.16.0
 
-# ===== Utilidades =====
-numpy
+# --- AUTOMAÇÃO ---
+pyautogui==0.9.54
+pynput==1.7.7
+pyperclip==1.9.0
+
+# --- WEB SCRAPING ---
+playwright==1.48.0
+requests==2.32.3
+beautifulsoup4==4.12.3
+
+# --- IMAGENS ---
+Pillow==10.4.0
+
+# --- SISTEMA ---
+psutil==6.1.0
+
+# --- DEPENDÊNCIAS IMPLÍCITAS (podem ser necessárias) ---
+# Estas são instaladas automaticamente, mas listadas para clareza
+certifi>=2024.0.0
+charset-normalizer>=3.0.0
+idna>=3.0
+urllib3>=2.0.0
+
+# ============================================
+# INSTALAÇÃO:
+# pip install -r requirements.txt
+# ============================================
+
+# NOTAS:
+# 1. pyaudio pode precisar de instalação manual no Windows:
+#    pip install pipwin
+#    pipwin install pyaudio
+#
+# 2. Playwright precisa de instalação dos browsers:
+#    playwright install chromium
+#
+# 3. Se usar conda/venv, ative o ambiente antes
+# ============================================
