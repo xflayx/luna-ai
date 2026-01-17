@@ -1,9 +1,52 @@
+import queue
+import threading
 import speech_recognition as sr
 import pyttsx3
 
 # Configurações do Reconhecedor
 rec = sr.Recognizer()
 mic = sr.Microphone()
+
+_fala_queue = queue.Queue()
+_fala_thread = None
+_fala_thread_lock = threading.Lock()
+
+def _fala_worker():
+    while True:
+        texto = _fala_queue.get()
+        try:
+            # Inicializa a engine dentro da thread para evitar travamentos
+            engine = pyttsx3.init()
+
+            # Configurações de Voz
+            engine.setProperty("rate", 180)  # Velocidade da fala
+            engine.setProperty("volume", 1.0) # Volume máximo
+
+            # Tenta definir uma voz em Português (Brasil)
+            voices = engine.getProperty('voices')
+            for voice in voices:
+                if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
+                    engine.setProperty('voice', voice.id)
+                    break
+
+            engine.say(str(texto))
+            engine.runAndWait()
+            engine.stop()
+            del engine
+        except Exception as e:
+            print(f"❌ ERRO NO ÁUDIO: {e}")
+        finally:
+            _fala_queue.task_done()
+
+def _iniciar_fala_thread():
+    global _fala_thread
+    if _fala_thread and _fala_thread.is_alive():
+        return
+    with _fala_thread_lock:
+        if _fala_thread and _fala_thread.is_alive():
+            return
+        _fala_thread = threading.Thread(target=_fala_worker, daemon=True)
+        _fala_thread.start()
 
 def falar(texto):
     # Remove asteriscos para a Luna não ler "asterisco"
@@ -13,32 +56,9 @@ def falar(texto):
     Inicializa a engine localmente para evitar travamentos em loops longos.
     """
     print(f"\n🤖 LUNA: {texto}")
-    
-    try:
-        # Inicializa a engine dentro da função para resetar o driver de áudio
-        engine = pyttsx3.init()
-        
-        # Configurações de Voz
-        engine.setProperty("rate", 180)  # Velocidade da fala
-        engine.setProperty("volume", 1.0) # Volume máximo
-        
-        # Tenta definir uma voz em Português (Brasil)
-        voices = engine.getProperty('voices')
-        for voice in voices:
-            if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
-                engine.setProperty('voice', voice.id)
-                break
 
-        # Executa a fala
-        engine.say(str(texto))
-        engine.runAndWait()
-        
-        # Finaliza a instância para liberar o recurso de hardware
-        engine.stop()
-        del engine
-        
-    except Exception as e:
-        print(f"❌ ERRO NO ÁUDIO: {e}")
+    _iniciar_fala_thread()
+    _fala_queue.put(texto_limpo)
 
 
 def ouvir():
