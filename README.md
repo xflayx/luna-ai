@@ -10,11 +10,15 @@ A Luna consegue "enxergar" o que você está fazendo e responder a perguntas esp
 * **Identificação:** "Luna, veja a imagem e me diga qual é esse personagem."
 * **Sugestões:** "Luna, analise a tela e recomende um anime baseado no que estou vendo."
 
-### 🖱️ Sequências (Macros)
-Automatize cliques e comandos do teclado através da voz. [cite: 2025-12-30]
-* **Gravação:** "Luna, gravar sequência."
-* **Interrupção:** "Luna, parar gravação."
-* **Execução:** "Luna, executar sequência [Nome da Sequência]."
+## 🤖 Sequências (Macros)
+Módulo de automação de periféricos controlado por voz.
+
+| Comando | Descrição |
+| :--- | :--- |
+| **"Luna gravar sequência"** | Inicia a gravação de movimentos do mouse e teclas pressionadas. |
+| **"Luna parar sequência"** | Interrompe a gravação e solicita um nome para salvar o arquivo. |
+| **"Luna executar sequência [nome]"** | Carrega a sequência desejada. |
+| **Loop** | Após o comando de execução, a Luna perguntará quantas vezes a sequência deve ser repetida. |."
 
 ### 🧠 Opinion Engine & Contexto
 A Luna possui memória de curto prazo e um motor de personalidade que permite conversas fluidas sem perder o fio da meada. Ela detecta intenções de forma flexível, aceitando variações naturais da fala.
