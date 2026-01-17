@@ -1,66 +1,97 @@
 # core/router.py
-from config.state import SKILLS_STATE, STATE
-from skills.macros import (
-    iniciar_gravacao_sequencia, parar_gravacao_sequencia, 
-    finalizar_salvamento, preparar_execucao, executar_com_loop
-)
-from skills.vision import analisar_tela
-from skills.price import responder_preco
-from core.opinion_engine import gerar_opiniao
+import os, sys, importlib, logging
+from typing import Optional, Dict
+from config.state import STATE
+from core.intent import detectar_intencao
 
-def processar_comando(cmd, intent):
-    comando_bruto = cmd.lower().strip()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("Router")
 
-    # --- 1. PRIORIDADE: ESTADOS DE ESPERA (Respostas diretas) ---
-    if STATE.esperando_nome_sequencia:
-        nome_final = comando_bruto.replace("luna", "").strip()
-        return finalizar_salvamento(nome_final)
+class RouterLuna:
+    def __init__(self):
+        self.skills = {}
+        self.carregar_skills()
 
-    if STATE.esperando_nome_execucao:
-        nome_final = comando_bruto.replace("luna", "").strip()
-        STATE.esperando_nome_execucao = False
-        return preparar_execucao(nome_final)
+    def carregar_skills(self):
+        pasta = os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills")
+        if pasta not in sys.path:
+            sys.path.insert(0, pasta)
+        
+        for arquivo in os.listdir(pasta):
+            if not arquivo.endswith('.py') or arquivo.startswith('_'):
+                continue
+            
+            nome = arquivo[:-3]
+            try:
+                mod = importlib.import_module(f"skills.{nome}")
+                if hasattr(mod, 'GATILHOS') and hasattr(mod, 'executar'):
+                    self.skills[nome] = mod
+                    if hasattr(mod, 'inicializar'):
+                        mod.inicializar()
+                    else:
+                        logger.info(f"✅ {nome}")
+            except Exception as e:
+                logger.error(f"❌ {nome}: {e}")
+        
+        logger.info(f"📦 {len(self.skills)} skills carregadas")
 
-    if STATE.esperando_loops:
-        return executar_com_loop(comando_bruto)
+    def processar_comando(self, cmd: str, intent: Optional[str] = None) -> Optional[str]:
+        cmd_lower = cmd.lower().strip()
+        cmd_limpo = cmd_lower.replace("luna", "").strip()
 
-    # --- 2. FILTRO DE ATIVAÇÃO "LUNA" ---
-    if not comando_bruto.startswith("luna"):
-        return None
+        # Estados de sequência (prioridade máxima)
+        if STATE.esperando_nome_sequencia or STATE.esperando_loops or STATE.gravando_sequencia:
+            for skill in self.skills.values():
+                if "sequencia" in skill.__name__ or "macros" in skill.__name__:
+                    return skill.executar(cmd_limpo)
+            return "Erro: sequência não carregada"
 
-    comando_limpo = comando_bruto.replace("luna", "", 1).strip()
-    resposta = None
+        # Filtro "Luna"
+        if not cmd_lower.startswith("luna"):
+            return None
+        
+        if not cmd_limpo:
+            return "Sim?"
 
-    # --- 3. ROTEAMENTO DE SKILLS ---
+        # Detecta intenção
+        if not intent:
+            intent = detectar_intencao(cmd_limpo)
 
-    # SEQUÊNCIAS (MACROS)
-    if intent == "sequencia":
-        if "gravar" in comando_limpo:
-            resposta = iniciar_gravacao_sequencia()
-        elif any(p in comando_limpo for p in ["parar", "pare"]):
-            resposta = parar_gravacao_sequencia()
-        elif "executar" in comando_limpo or "sequencia" in comando_limpo or "sequência" in comando_limpo:
-            nome = comando_limpo.replace("executar", "").replace("sequencia", "").replace("sequência", "").strip()
-            if not nome:
-                STATE.esperando_nome_execucao = True
-                return "Qual o nome da sequência que você deseja executar?"
-            resposta = preparar_execucao(nome)
+        # Busca por intenção
+        for nome, skill in self.skills.items():
+            info = getattr(skill, 'SKILL_INFO', {})
+            if intent in info.get('intents', []) or intent in nome:
+                try:
+                    resp = skill.executar(cmd_limpo)
+                    if resp:
+                        STATE.adicionar_ao_historico(cmd_limpo, resp)
+                    return resp
+                except Exception as e:
+                    return f"Erro: {e}"
 
-    # VISÃO
-    elif intent == "visao" and SKILLS_STATE["vision"]:
-        resposta = analisar_tela(comando_limpo)
+        # Busca por gatilhos
+        for skill in self.skills.values():
+            if any(g in cmd_limpo for g in skill.GATILHOS):
+                try:
+                    resp = skill.executar(cmd_limpo)
+                    if resp:
+                        STATE.adicionar_ao_historico(cmd_limpo, resp)
+                    return resp
+                except Exception as e:
+                    return f"Erro: {e}"
 
-    # PREÇO
-    elif intent == "preco" and SKILLS_STATE["price"]:
-        resposta = responder_preco(comando_limpo)
-    
-    # CONVERSA
-    elif intent == "conversa":
-        if not comando_limpo: return "Sim? Estou ouvindo."
-        resposta = gerar_opiniao(comando_limpo)
+        return "Não entendi esse comando."
 
-    if resposta:
-        STATE.adicionar_ao_historico(comando_limpo, resposta)
-        return resposta
-    
-    return None
+_router = None
+
+def processar_comando(cmd: str, intent: Optional[str] = None) -> Optional[str]:
+    global _router
+    if not _router:
+        _router = RouterLuna()
+    return _router.processar_comando(cmd, intent)
+
+if __name__ == "__main__":
+    r = RouterLuna()
+    for nome, skill in r.skills.items():
+        info = getattr(skill, 'SKILL_INFO', {})
+        print(f"{info.get('nome', nome)}: {skill.GATILHOS[:3]}")

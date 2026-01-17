@@ -1,48 +1,93 @@
+# skills/vision.py
 import tempfile
 import os
 from PIL import ImageGrab
 from llm.vision_llm import analisar_imagem_llm
-from core.opinion_engine import gerar_opiniao
 from config.state import STATE
 
+# ========================================
+# METADADOS DA SKILL
+# ========================================
+
+SKILL_INFO = {
+    "nome": "Vision",
+    "descricao": "Analisa imagens da tela usando Gemini Vision",
+    "versao": "1.0.0",
+    "autor": "Luna Team",
+    "intents": ["visao", "vision"]
+}
+
+GATILHOS = ["analise", "veja", "olhe", "tela"]
+
+# ========================================
+# INICIALIZAÇÃO
+# ========================================
+
+def inicializar():
+    print(f"✅ {SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
+
+# ========================================
+# FUNÇÃO PRINCIPAL
+# ========================================
+
+def executar(comando: str) -> str:
+    """Captura e analisa a tela"""
+    return analisar_tela(comando)
+
 def analisar_tela(cmd: str) -> str:
-    """
-    Captura a tela, analisa o conteúdo via Gemini considerando o contexto 
-    da conversa e gera uma resposta com a personalidade da Luna.
-    """
+    """Captura a tela, analisa via Gemini e retorna resposta"""
     try:
-        # 📸 Captura de tela
-        screenshot = ImageGrab.grab()
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            screenshot.save(tmp.name)
-            image_path = tmp.name
+        image_path = "screenshot.png"
+        cmd_lower = cmd.lower()
 
-        # 🧠 Recupera o contexto da memória para o prompt
-        contexto_previo = STATE.obter_contexto_curto()
+        # Captura site completo se for web_reader
+        if any(p in cmd_lower for p in ["site", "página"]):
+            try:
+                from skills.web_reader import capturar_url_atual, capturar_site_inteiro_playwright
+                url = capturar_url_atual()
+                if url:
+                    print(f"🌐 Luna acessando: {url}")
+                    image_path = capturar_site_inteiro_playwright(url)
+                else:
+                    return "Não vejo nenhum site aberto."
+            except:
+                screenshot = ImageGrab.grab()
+                screenshot.save(image_path)
+        else:
+            # Captura de tela normal
+            screenshot = ImageGrab.grab()
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                screenshot.save(tmp.name)
+                image_path = tmp.name
 
-        # 📝 PROMPT AJUSTADO PARA RESUMOS E PERGUNTAS ESPECÍFICAS
-        prompt = (
-        f"Você é a Luna. Contexto: {contexto_previo}\n"
-        f"Instrução do usuário: '{cmd}'\n\n"
-        "REGRAS CRÍTICAS DE RESPOSTA:\n"
-        "1. PROIBIDO usar símbolos como '*', '#', ou '-' para listas. Use apenas texto corrido.\n"
-        "2. CURTO E DIRETO: Responda em no máximo dois parágrafos pequenos.\n"
-        "3. PERSONALIDADE: Mantenha o sarcasmo, mas sem enrolação.\n"
-        "4. VOZ: Escreva exatamente como deve ser falado. Não use formatação visual (Markdown).\n"
-        "5. Se for um resumo, seja concisa e ignore detalhes irrelevantes da interface."
-    )
+        # Contexto da conversa
+        contexto = STATE.obter_contexto_curto()
 
-        # 1. Obtém a resposta completa do Gemini (que já deve vir com a personalidade)
-        resposta_luna = analisar_imagem_llm(image_path, prompt).strip()
+        # Prompt para o Gemini
+        prompt = f"""Você é a Luna, VTuber e assistente IA.
+Contexto: {contexto}
+Comando: '{cmd}'
 
-        # Limpeza
-        try:
-            os.remove(image_path)
-        except:
-            pass
+Analise a imagem e responda de forma:
+- Natural e conversacional
+- Direta (2-3 frases)
+- Sem usar *, #, ou listas
+- Tom amigável e levemente sarcástico
 
-        return resposta_luna
+Responda como se estivesse falando ao vivo."""
+
+        # Chama Gemini Vision
+        resposta = analisar_imagem_llm(image_path, prompt).strip()
+
+        # Limpa arquivo temporário
+        if os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except:
+                pass
+
+        return resposta
 
     except Exception as e:
-        print("❌ ERRO NA VISÃO:", e)
-        return "Tive um problema ao tentar processar o que estou vendo agora."
+        print(f"❌ ERRO NA VISÃO: {e}")
+        return "Tive um problema ao analisar a tela."

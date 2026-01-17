@@ -18,7 +18,7 @@ def gerar_opiniao(descricao_tecnica: str) -> str:
                     "Gráfico de cripto é igual montanha-russa, só que sem a segurança. Boa sorte com isso.",
                     "Eu não tenho estômago para essas variações, e olha que eu nem tenho estômago."
                 ]
-            elif critica > 0.6:
+            elif critica > 0.4:
                 opcoes = [
                     "Analisando friamente, essa volatilidade exige cautela redobrada.",
                     "Os números não mentem, mas o mercado certamente tenta enganar.",
