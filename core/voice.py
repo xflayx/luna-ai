@@ -1,3 +1,4 @@
+import os
 import queue
 import threading
 import speech_recognition as sr
@@ -10,6 +11,34 @@ mic = sr.Microphone()
 _fala_queue = queue.Queue()
 _fala_thread = None
 _fala_thread_lock = threading.Lock()
+_engine = None
+_engine_lock = threading.Lock()
+
+_FORCAR_TTS_ASSINCRONO = os.getenv("LUNA_TTS_ASYNC")
+_TTS_ASSINCRONO = _FORCAR_TTS_ASSINCRONO == "1" or (
+    _FORCAR_TTS_ASSINCRONO is None and os.name != "nt"
+)
+
+def _configurar_engine(engine):
+    engine.setProperty("rate", 180)  # Velocidade da fala
+    engine.setProperty("volume", 1.0)  # Volume máximo
+
+    # Tenta definir uma voz em Português (Brasil)
+    voices = engine.getProperty("voices")
+    for voice in voices:
+        if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
+            engine.setProperty("voice", voice.id)
+            break
+
+def _obter_engine_sincrono():
+    global _engine
+    if _engine is not None:
+        return _engine
+    with _engine_lock:
+        if _engine is None:
+            _engine = pyttsx3.init()
+            _configurar_engine(_engine)
+    return _engine
 
 def _fala_worker():
     engine = None
@@ -17,16 +46,7 @@ def _fala_worker():
         # Inicializa a engine uma única vez na thread
         engine = pyttsx3.init()
 
-        # Configurações de Voz
-        engine.setProperty("rate", 180)  # Velocidade da fala
-        engine.setProperty("volume", 1.0) # Volume máximo
-
-        # Tenta definir uma voz em Português (Brasil)
-        voices = engine.getProperty('voices')
-        for voice in voices:
-            if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
-                engine.setProperty('voice', voice.id)
-                break
+        _configurar_engine(engine)
     except Exception as e:
         print(f"❌ ERRO NO ÁUDIO: {e}")
 
@@ -62,8 +82,18 @@ def falar(texto):
     """
     print(f"\n🤖 LUNA: {texto}")
 
-    _iniciar_fala_thread()
-    _fala_queue.put(texto_limpo)
+    if _TTS_ASSINCRONO:
+        _iniciar_fala_thread()
+        _fala_queue.put(texto_limpo)
+        return
+
+    try:
+        engine = _obter_engine_sincrono()
+        with _engine_lock:
+            engine.say(str(texto_limpo))
+            engine.runAndWait()
+    except Exception as e:
+        print(f"❌ ERRO NO ÁUDIO: {e}")
 
 
 def ouvir():
