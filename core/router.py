@@ -10,6 +10,7 @@ logger = logging.getLogger("Router")
 class RouterLuna:
     def __init__(self):
         self.skills = {}
+        self.skill_modulos = []
         self.carregar_skills()
 
     def carregar_skills(self):
@@ -22,18 +23,25 @@ class RouterLuna:
                 continue
             
             nome = arquivo[:-3]
-            try:
-                mod = importlib.import_module(f"skills.{nome}")
-                if hasattr(mod, 'GATILHOS') and hasattr(mod, 'executar'):
-                    self.skills[nome] = mod
-                    if hasattr(mod, 'inicializar'):
-                        mod.inicializar()
-                    else:
-                        logger.info(f"✅ {nome}")
-            except Exception as e:
-                logger.error(f"❌ {nome}: {e}")
+            self.skill_modulos.append(nome)
         
-        logger.info(f"📦 {len(self.skills)} skills carregadas")
+        logger.info(f"📦 {len(self.skill_modulos)} skills registradas (lazy-load)")
+
+    def _carregar_skill(self, nome: str):
+        if nome in self.skills:
+            return self.skills[nome]
+        try:
+            mod = importlib.import_module(f"skills.{nome}")
+            if hasattr(mod, 'GATILHOS') and hasattr(mod, 'executar'):
+                self.skills[nome] = mod
+                if hasattr(mod, 'inicializar'):
+                    mod.inicializar()
+                else:
+                    logger.info(f"✅ {nome}")
+                return mod
+        except Exception as e:
+            logger.error(f"❌ {nome}: {e}")
+        return None
 
     def processar_comando(self, cmd: str, intent: Optional[str] = None) -> Optional[str]:
         cmd_lower = cmd.lower().strip()
@@ -41,9 +49,11 @@ class RouterLuna:
 
         # Estados de sequência (prioridade máxima)
         if STATE.esperando_nome_sequencia or STATE.esperando_loops or STATE.gravando_sequencia:
-            for skill in self.skills.values():
-                if "sequencia" in skill.__name__ or "macros" in skill.__name__:
-                    return skill.executar(cmd_limpo)
+            for nome in self.skill_modulos:
+                if "sequencia" in nome or "macros" in nome:
+                    skill = self._carregar_skill(nome)
+                    if skill:
+                        return skill.executar(cmd_limpo)
             return "Erro: sequência não carregada"
 
         # Filtro "Luna"
@@ -58,9 +68,24 @@ class RouterLuna:
             intent = detectar_intencao(cmd_limpo)
 
         # Busca por intenção
-        for nome, skill in self.skills.items():
+        for nome in self.skill_modulos:
+            if intent in nome:
+                skill = self._carregar_skill(nome)
+                if not skill:
+                    continue
+                try:
+                    resp = skill.executar(cmd_limpo)
+                    if resp:
+                        STATE.adicionar_ao_historico(cmd_limpo, resp)
+                    return resp
+                except Exception as e:
+                    return f"Erro: {e}"
+        for nome in self.skill_modulos:
+            skill = self._carregar_skill(nome)
+            if not skill:
+                continue
             info = getattr(skill, 'SKILL_INFO', {})
-            if intent in info.get('intents', []) or intent in nome:
+            if intent in info.get('intents', []):
                 try:
                     resp = skill.executar(cmd_limpo)
                     if resp:
@@ -70,7 +95,10 @@ class RouterLuna:
                     return f"Erro: {e}"
 
         # Busca por gatilhos
-        for skill in self.skills.values():
+        for nome in self.skill_modulos:
+            skill = self._carregar_skill(nome)
+            if not skill:
+                continue
             if any(g in cmd_limpo for g in skill.GATILHOS):
                 try:
                     resp = skill.executar(cmd_limpo)
