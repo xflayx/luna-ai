@@ -11,6 +11,7 @@ class RouterLuna:
     def __init__(self):
         self.skills = {}
         self.skill_modulos = []
+        self.skill_erros = {}
         self.carregar_skills()
 
     def carregar_skills(self):
@@ -27,12 +28,25 @@ class RouterLuna:
         
         logger.info(f"📦 {len(self.skill_modulos)} skills registradas (lazy-load)")
 
+    def _validar_skill(self, mod) -> bool:
+        """Valida se o módulo segue o contrato de skill."""
+        if not hasattr(mod, "GATILHOS"):
+            logger.warning(f"⚠️ {mod.__name__} sem GATILHOS")
+            return False
+        if not hasattr(mod, "executar"):
+            logger.warning(f"⚠️ {mod.__name__} sem executar()")
+            return False
+        if not hasattr(mod, "SKILL_INFO"):
+            logger.warning(f"⚠️ {mod.__name__} sem SKILL_INFO")
+            return False
+        return True
+
     def _carregar_skill(self, nome: str):
         if nome in self.skills:
             return self.skills[nome]
         try:
             mod = importlib.import_module(f"skills.{nome}")
-            if hasattr(mod, 'GATILHOS') and hasattr(mod, 'executar'):
+            if self._validar_skill(mod):
                 self.skills[nome] = mod
                 if hasattr(mod, 'inicializar'):
                     mod.inicializar()
@@ -41,7 +55,33 @@ class RouterLuna:
                 return mod
         except Exception as e:
             logger.error(f"❌ {nome}: {e}")
+            self.skill_erros[nome] = str(e)
         return None
+
+    def recarregar_skill(self, nome: str):
+        """Recarrega uma skill específica (hot-reload)."""
+        try:
+            mod = importlib.import_module(f"skills.{nome}")
+            mod = importlib.reload(mod)
+            if self._validar_skill(mod):
+                self.skills[nome] = mod
+                if hasattr(mod, 'inicializar'):
+                    mod.inicializar()
+                else:
+                    logger.info(f"✅ {nome} (recarregada)")
+                return mod
+        except Exception as e:
+            logger.error(f"❌ Falha ao recarregar {nome}: {e}")
+            self.skill_erros[nome] = str(e)
+        return None
+
+    def recarregar_todas(self):
+        """Recarrega todas as skills conhecidas."""
+        carregadas = 0
+        for nome in self.skill_modulos:
+            if self.recarregar_skill(nome):
+                carregadas += 1
+        return carregadas
 
     def processar_comando(self, cmd: str, intent: Optional[str] = None) -> Optional[str]:
         cmd_lower = cmd.lower().strip()
