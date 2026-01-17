@@ -12,27 +12,32 @@ _fala_thread = None
 _fala_thread_lock = threading.Lock()
 
 def _fala_worker():
+    engine = None
+    try:
+        # Inicializa a engine uma única vez na thread
+        engine = pyttsx3.init()
+
+        # Configurações de Voz
+        engine.setProperty("rate", 180)  # Velocidade da fala
+        engine.setProperty("volume", 1.0) # Volume máximo
+
+        # Tenta definir uma voz em Português (Brasil)
+        voices = engine.getProperty('voices')
+        for voice in voices:
+            if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
+                engine.setProperty('voice', voice.id)
+                break
+    except Exception as e:
+        print(f"❌ ERRO NO ÁUDIO: {e}")
+
     while True:
         texto = _fala_queue.get()
         try:
-            # Inicializa a engine dentro da thread para evitar travamentos
-            engine = pyttsx3.init()
-
-            # Configurações de Voz
-            engine.setProperty("rate", 180)  # Velocidade da fala
-            engine.setProperty("volume", 1.0) # Volume máximo
-
-            # Tenta definir uma voz em Português (Brasil)
-            voices = engine.getProperty('voices')
-            for voice in voices:
-                if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
-                    engine.setProperty('voice', voice.id)
-                    break
-
+            if not engine:
+                _fala_queue.task_done()
+                continue
             engine.say(str(texto))
             engine.runAndWait()
-            engine.stop()
-            del engine
         except Exception as e:
             print(f"❌ ERRO NO ÁUDIO: {e}")
         finally:
