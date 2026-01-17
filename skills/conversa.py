@@ -128,7 +128,9 @@ def _criar_prompt_conversa(mensagem_usuario: str) -> list:
 
 def _conversar_com_gemini(mensagem: str) -> str:
     """Usa Gemini com fallback de chaves"""
-    
+    if not API_KEYS:
+        return _resposta_fallback(mensagem)
+
     for tentativa in range(len(API_KEYS)):
         try:
             data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -180,6 +182,30 @@ def _resposta_fallback(mensagem: str) -> str:
     """Respostas pré-definidas quando Gemini não está disponível"""
     
     msg_lower = mensagem.lower()
+
+    # Identidade e capacidades
+    if any(p in msg_lower for p in ["quem é você", "quem e voce", "o que você faz", "o que voce faz", "o que sabe"]):
+        return "Sou a Luna, sua assistente virtual. Posso conversar, analisar telas, ler sites, monitorar o sistema e executar sequências."
+
+    # Ajuda geral
+    if any(p in msg_lower for p in ["o que você pode", "o que voce pode", "ajuda", "comandos"]):
+        return "Posso fazer resumos de tela, ler sites, checar preços, rodar macros e bater papo. Quer tentar algum comando?"
+
+    # Perguntas simples
+    if "seu nome" in msg_lower or "teu nome" in msg_lower:
+        return "Meu nome é Luna. Sim, como a lua."
+
+    if any(p in msg_lower for p in ["tudo bem", "como você está", "como voce esta", "como está"]):
+        return "Tudo certo por aqui. Pronta pra ajudar. E você?"
+
+    if "obrigado" in msg_lower or "obrigada" in msg_lower:
+        return "De nada. Sempre às ordens."
+
+    if "piada" in msg_lower:
+        return "Quer uma rápida? Por que o computador foi ao médico? Porque tinha um vírus."
+
+    if "tempo" in msg_lower or "hora" in msg_lower:
+        return "Eu posso ver a hora do sistema se você pedir. Quer que eu cheque?"
     
     # Saudações
     if any(s in msg_lower for s in ["oi", "olá", "hey", "e aí"]):
@@ -243,13 +269,10 @@ def _resposta_fallback(mensagem: str) -> str:
             "Como se chama um cachorro mágico? Labracadabrador! 🐕✨",
         ])
     
-    # Padrão
-    from random import choice
-    return choice([
-        "Interessante! Me conta mais sobre isso.",
-        "Hmm, entendi. O que você gostaria de fazer?",
-        "Legal! Precisa de ajuda com algo específico?",
-    ])
+    # Padrão mais conversacional
+    return (
+        "Entendi. Quer que eu faça algo específico ou quer continuar conversando?"
+    )
 
 
 def limpar_historico():
