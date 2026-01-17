@@ -1,10 +1,10 @@
-import os
-import queue
-import threading
-import speech_recognition as sr
-import pyttsx3
 
-# Configurações do Reconhecedor
+
+
+        engine.say(str(texto_limpo))
+
+
+    falar("Sistema de voz da Luna inicializado com sucesso.")
 rec = sr.Recognizer()
 mic = sr.Microphone()
 

@@ -54,6 +54,8 @@ def analisar_tela(cmd: str) -> str:
                 screenshot = ImageGrab.grab()
                 screenshot.save(image_path)
                 screenshot.close()
+            screenshot.close()
+        return "Tive um problema ao analisar a tela."
         else:
             # Captura de tela normal
             screenshot = ImageGrab.grab()

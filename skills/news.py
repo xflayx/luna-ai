@@ -1,6 +1,10 @@
 # skills/news.py
 import os
-import requests
+    serpapi_api_key = os.getenv("SERPAPI_API_KEY", "")
+    if not serpapi_api_key:
+        return "SERPAPI_API_KEY não configurada."
+
+        "api_key": serpapi_api_key
 
 # ========================================
 # METADADOS DA SKILL (Padrão de Plugin)

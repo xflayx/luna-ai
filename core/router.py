@@ -12,23 +12,91 @@ class RouterLuna:
         self.skills = {}
         self.skill_modulos = []
         self.skill_erros = {}
-        self.carregar_skills()
-
-    def carregar_skills(self):
-        pasta = os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills")
-        if pasta not in sys.path:
-            sys.path.insert(0, pasta)
-        
-        for arquivo in os.listdir(pasta):
-            if not arquivo.endswith('.py') or arquivo.startswith('_'):
-                continue
-            
-            nome = arquivo[:-3]
             self.skill_modulos.append(nome)
-        
         logger.info(f"📦 {len(self.skill_modulos)} skills registradas (lazy-load)")
 
     def _validar_skill(self, mod) -> bool:
+        """Valida se o módulo segue o contrato de skill."""
+        if not hasattr(mod, "GATILHOS"):
+            logger.warning(f"⚠️ {mod.__name__} sem GATILHOS")
+            return False
+        if not hasattr(mod, "executar"):
+            logger.warning(f"⚠️ {mod.__name__} sem executar()")
+            return False
+        if not hasattr(mod, "SKILL_INFO"):
+            logger.warning(f"⚠️ {mod.__name__} sem SKILL_INFO")
+            return False
+        return True
+
+    def _carregar_skill(self, nome: str):
+        if nome in self.skills:
+            return self.skills[nome]
+        try:
+            mod = importlib.import_module(f"skills.{nome}")
+            if self._validar_skill(mod):
+                self.skills[nome] = mod
+                if hasattr(mod, 'inicializar'):
+                    mod.inicializar()
+                else:
+                    logger.info(f"✅ {nome}")
+                return mod
+        except Exception as e:
+            logger.error(f"❌ {nome}: {e}")
+            self.skill_erros[nome] = str(e)
+        return None
+
+    def recarregar_skill(self, nome: str):
+        """Recarrega uma skill específica (hot-reload)."""
+        try:
+            mod = importlib.import_module(f"skills.{nome}")
+            mod = importlib.reload(mod)
+            if self._validar_skill(mod):
+                self.skills[nome] = mod
+                if hasattr(mod, 'inicializar'):
+                    mod.inicializar()
+                else:
+                    logger.info(f"✅ {nome} (recarregada)")
+                return mod
+        except Exception as e:
+            logger.error(f"❌ Falha ao recarregar {nome}: {e}")
+            self.skill_erros[nome] = str(e)
+        return None
+
+    def recarregar_todas(self):
+        """Recarrega todas as skills conhecidas."""
+        carregadas = 0
+        for nome in self.skill_modulos:
+            if self.recarregar_skill(nome):
+                carregadas += 1
+        return carregadas
+            for nome in self.skill_modulos:
+                if "sequencia" in nome or "macros" in nome:
+                    skill = self._carregar_skill(nome)
+                    if skill:
+                        return skill.executar(cmd_limpo)
+        for nome in self.skill_modulos:
+            if intent in nome:
+                skill = self._carregar_skill(nome)
+                if not skill:
+                    continue
+                try:
+                    resp = skill.executar(cmd_limpo)
+                    if resp:
+                        STATE.adicionar_ao_historico(cmd_limpo, resp)
+                    return resp
+                except Exception as e:
+                    return f"Erro: {e}"
+        for nome in self.skill_modulos:
+            skill = self._carregar_skill(nome)
+            if not skill:
+                continue
+            if intent in info.get('intents', []):
+        for nome in self.skill_modulos:
+            skill = self._carregar_skill(nome)
+            if not skill:
+                continue
+
+        print(f"{info.get('nome', nome)}: {skill.GATILHOS[:3]}")
         """Valida se o módulo segue o contrato de skill."""
         if not hasattr(mod, "GATILHOS"):
             logger.warning(f"⚠️ {mod.__name__} sem GATILHOS")
