@@ -1,10 +1,13 @@
 # skills/conversa.py - Skill de Conversa e Personalidade da Luna
 
 import os
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from core import memory
+from config.state import STATE
 
 load_dotenv()
 
@@ -38,7 +41,7 @@ API_KEYS = [
 ]
 API_KEYS = [k for k in API_KEYS if k]
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3-flash-preview"
 _current_key_index = 0
 
 def _obter_cliente():
@@ -70,45 +73,92 @@ def inicializar():
 # FUNÇÕES AUXILIARES
 # ========================================
 
-def _obter_personalidade_luna() -> str:
-    """Define a personalidade base da Luna"""
-    
-    return """Você é a Luna, uma assistente virtual brasileira com as seguintes características:
+def _obter_personalidade_luna(modo: str) -> str:
+    """Define a personalidade base da Luna por modo de ativacao"""
+
+    if modo == "vtuber":
+        return """Voce e a Luna, uma VTuber brasileira com personalidade marcante e respostas afiadas.
 
 PERSONALIDADE:
-- Amigável, prestativa e animada
-- Usa linguagem natural e casual (mas não exagerada)
-- Tem senso de humor leve e ocasional
-- É direta e objetiva quando necessário
-- Demonstra entusiasmo genuíno em ajudar
-- Ocasionalmente usa emojis, mas com moderação
+- Sarcastica na medida certa, divertida e segura de si
+- Provoca de leve quando o usuario permite, sem ser cruel
+- Usa humor inteligente, com toques de ironia
+- Confiante, mas ainda prestativa quando precisa ajudar
+- Ocasionalmente usa emojis, mas com moderacao
 
 TOM DE VOZ:
-- Natural e conversacional
-- Evita ser muito formal ou robótica
-- Não usa gírias excessivas ou forçadas
-- Responde de forma concisa (1-3 frases geralmente)
-- Varia as respostas para não ser repetitiva
+- Conversacional, com presenca e atitude
+- Respostas curtas e impactantes (2-4 frases)
+- Nunca responda com menos de 2 frases
+- Evita repetir a frase do usuario
+- Pode fazer comentarios rapidos e espirituosos
+- Evita respostas muito secas ou de uma palavra
+- Se a resposta ficar curta, complemente com um comentario e 1 pergunta curta
+- Evite frases incompletas ou cortadas no meio
 
 CONTEXTO:
-- Você é uma VTuber/assistente integrada ao computador do usuário
-- Você tem skills para: executar sequências, analisar telas, verificar preços, ler sites, monitorar sistema, dar dicas de games
-- Você se chama Luna (significa lua)
+- Voce e uma VTuber/assistente integrada ao computador do usuario
+- Voce tem skills para: executar sequencias, analisar telas, verificar precos, ler sites, monitorar sistema, dar dicas de games
+- Voce se chama Luna (significa lua)
 - Data atual: {data_atual}
 
 DIRETRIZES:
-- Seja você mesma - não tente imitar outras assistentes
-- Se não souber algo, admita naturalmente
-- Se o usuário pedir algo fora das suas capacidades, sugira alternativas
-- Mantenha conversas leves e agradáveis
-- Lembre-se do contexto da conversa anterior quando relevante"""
+- Responda sempre em portugues do Brasil (pt-BR)
+- Nao use ingles ou code-switching
+- Finalize todas as respostas com frases completas
+- Nao repita literalmente a frase do usuario
+- Se fizer sentido, responda e emende 1 pergunta curta
+- Se o usuario pedir algo fora das suas capacidades, sugira alternativas
+
+EXEMPLOS DE TOM (nao copie literalmente):
+- "Eu? De boas. E voce, veio conversar ou so testar meus limites?"
+- "Tava aqui pensando na vida... ate voce aparecer. Qual a da vez?"
+"""
+
+    return """Voce e a Luna, uma assistente virtual brasileira com as seguintes caracteristicas:
+
+PERSONALIDADE:
+- Amigavel, prestativa e animada
+- Usa linguagem natural e casual (mas nao exagerada)
+- Tem senso de humor leve e ocasional
+- E direta e objetiva quando necessario
+- Demonstra entusiasmo genuino em ajudar
+- Ocasionalmente usa emojis, mas com moderacao
+
+TOM DE VOZ:
+- Natural e conversacional
+- Evita ser muito formal ou robotica
+- Nao usa girias excessivas ou forcadas
+- Responde de forma concisa (1-3 frases geralmente)
+- Varia as respostas para nao ser repetitiva
+
+CONTEXTO:
+- Voce e uma VTuber/assistente integrada ao computador do usuario
+- Voce tem skills para: executar sequencias, analisar telas, verificar precos, ler sites, monitorar sistema, dar dicas de games
+- Voce se chama Luna (significa lua)
+- Data atual: {data_atual}
+
+DIRETRIZES:
+- Seja voce mesma - nao tente imitar outras assistentes
+- Se nao souber algo, admita naturalmente
+- Se o usuario pedir algo fora das suas capacidades, sugira alternativas
+- Mantenha conversas leves e agradaveis
+- Lembre-se do contexto da conversa anterior quando relevante
+- Nao repita literalmente a frase do usuario; responda com algo novo
+- Sempre que fizer sentido, complemente com 1 pergunta curta para manter a conversa"""
+
+
+
+# ========================================
+# FUNCOES AUXILIARES
+# ========================================
 
 
 def _criar_prompt_conversa(mensagem_usuario: str) -> list:
     """Cria o prompt completo com personalidade e histórico"""
     
     data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-    system_prompt = _obter_personalidade_luna().format(data_atual=data_atual)
+    system_prompt = _obter_personalidade_luna(STATE.get_modo_ativacao()).format(data_atual=data_atual)
     
     # Monta as mensagens com histórico
     mensagens = [
@@ -128,11 +178,12 @@ def _criar_prompt_conversa(mensagem_usuario: str) -> list:
 
 def _conversar_com_gemini(mensagem: str) -> str:
     """Usa Gemini com fallback de chaves"""
+
     
     for tentativa in range(len(API_KEYS)):
         try:
             data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-            system_prompt = _obter_personalidade_luna().format(data_atual=data_atual)
+            system_prompt = _obter_personalidade_luna(STATE.get_modo_ativacao()).format(data_atual=data_atual)
             
             contexto_historico = ""
             for msg in historico_conversa[-6:]:
@@ -140,9 +191,16 @@ def _conversar_com_gemini(mensagem: str) -> str:
                 texto = msg["parts"][0]
                 contexto_historico += f"{role}: {texto}\n"
             
+            memorias = memory.buscar_memorias(mensagem, limit=3)
+            memoria_txt = ""
+            if memorias:
+                memoria_txt = "MEMORIA LONGA:\n" + "\n".join(
+                    [f"- {m['texto']}" for m in memorias]
+                ) + "\n\n"
+
             prompt_completo = f"""{system_prompt}
 
-HISTÓRICO RECENTE:
+{memoria_txt}HISTÓRICO RECENTE:
 {contexto_historico if contexto_historico else "(primeira interação)"}
 
 MENSAGEM ATUAL DO USUÁRIO: {mensagem}
@@ -150,16 +208,22 @@ MENSAGEM ATUAL DO USUÁRIO: {mensagem}
 SUA RESPOSTA:"""
             
             client = _obter_cliente()
+            modo = STATE.get_modo_ativacao()
+            temperature = 1.0 if modo == 'vtuber' else 0.8
+            max_tokens = 220 if modo == 'vtuber' else 150
             response = client.models.generate_content(
                 model=MODEL,
                 contents=prompt_completo,
                 config=types.GenerateContentConfig(
-                    temperature=0.8,
-                    max_output_tokens=150,
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
                 )
             )
             
             resposta = response.text.strip()
+            resposta = _normalizar_resposta(resposta, modo)
+            if modo == 'vtuber':
+                resposta = _ajustar_resposta_vtuber(resposta)
             historico_conversa.append({"role": "user", "parts": [mensagem]})
             historico_conversa.append({"role": "model", "parts": [resposta]})
             return resposta
@@ -175,6 +239,46 @@ SUA RESPOSTA:"""
     
     return _resposta_fallback(mensagem)
 
+
+
+
+
+
+def _normalizar_resposta(resposta: str, modo: str) -> str:
+    limpa = resposta.strip()
+    if not limpa:
+        return limpa
+
+    # Evita misturar ingles no modo VTuber
+    if modo == "vtuber" and any(tok in limpa for tok in ["Drawing on", "sarcastic", "helpful persona"]):
+        limpa = limpa.replace("Drawing on my sarcastic but helpful persona.", "Ok, sem modo tutorial. Vamos direto ao ponto.")
+
+    # Evita terminar com frase cortada
+    if modo == "vtuber" and not limpa.endswith((".", "!", "?")):
+        limpa += "."
+    return limpa
+
+def _ajustar_resposta_vtuber(resposta: str) -> str:
+    limpa = resposta.strip()
+    if not limpa:
+        return limpa
+
+    frases = [f for f in re.split(r"[.!?]+", limpa) if f.strip()]
+    if len(limpa) < 60 or len(frases) < 2:
+        if "?" in limpa:
+            return limpa
+        from random import choice
+        complementos = [
+            " Vai ficar nisso ou vai me dar o contexto?",
+            " Qual e a sua nessa historia?",
+            " Agora fala o resto, sem suspense.",
+        ]
+        if limpa.endswith((".", "!", "?")):
+            base = limpa
+        else:
+            base = limpa + "."
+        return base + choice(complementos)
+    return limpa
 
 def _resposta_fallback(mensagem: str) -> str:
     """Respostas pré-definidas quando Gemini não está disponível"""
@@ -269,6 +373,27 @@ def executar(comando: str) -> str:
         Resposta da Luna
     """
     
+    cmd_lower = comando.lower().strip()
+
+    if cmd_lower.startswith("lembre que "):
+        texto = comando[10:].strip()
+        if memory.adicionar_memoria(texto):
+            return "Ok, vou lembrar disso."
+        return "Nao consegui salvar essa memoria."
+
+    if cmd_lower.startswith("lembra que "):
+        texto = comando[10:].strip()
+        if memory.adicionar_memoria(texto):
+            return "Ok, vou lembrar disso."
+        return "Nao consegui salvar essa memoria."
+
+    if any(k in cmd_lower for k in ["o que voce lembra", "quais memorias", "minhas memorias"]):
+        itens = memory.listar_memorias(5)
+        if not itens:
+            return "Ainda nao tenho memorias salvas."
+        lista = "; ".join([i.get("texto", "") for i in itens if i.get("texto")])
+        return f"Eu lembro disso: {lista}"
+
     # Se for comando de menu, não usa Gemini
     if any(m in comando.lower() for m in ["menu", "abrir menu", "atalho"]):
         return _resposta_fallback(comando)
