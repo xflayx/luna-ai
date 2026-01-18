@@ -1,6 +1,10 @@
 # skills/news.py
-import requests
-from config.settings import SERPAPI_API_KEY
+import os
+    serpapi_api_key = os.getenv("SERPAPI_API_KEY", "")
+    if not serpapi_api_key:
+        return "SERPAPI_API_KEY não configurada."
+
+        "api_key": serpapi_api_key
 
 # ========================================
 # METADADOS DA SKILL (Padrão de Plugin)
@@ -47,12 +51,16 @@ def executar(comando: str) -> str:
 def buscar_noticias(query: str) -> str:
     """Busca notícias usando SerpAPI"""
     
+    serpapi_api_key = os.getenv("SERPAPI_API_KEY", "")
+    if not serpapi_api_key:
+        return "SERPAPI_API_KEY não configurada."
+
     params = {
         "engine": "google",
         "q": query,
         "hl": "pt-BR",
         "gl": "br",
-        "api_key": SERPAPI_API_KEY
+        "api_key": serpapi_api_key
     }
 
     try:

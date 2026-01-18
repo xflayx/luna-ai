@@ -157,3 +157,7 @@ while True:
         falar(resposta)
     else:
         status("⚠️ Nenhuma resposta gerada")
+
+    time.sleep(0.1)
+
+    time.sleep(0.1)

@@ -53,12 +53,16 @@ def analisar_tela(cmd: str) -> str:
             except:
                 screenshot = ImageGrab.grab()
                 screenshot.save(image_path)
+                screenshot.close()
+            screenshot.close()
+        return "Tive um problema ao analisar a tela."
         else:
             # Captura de tela normal
             screenshot = ImageGrab.grab()
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 screenshot.save(tmp.name)
                 image_path = tmp.name
+            screenshot.close()
 
         # Contexto da conversa
         contexto = STATE.obter_contexto_curto()
