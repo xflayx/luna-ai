@@ -9,6 +9,7 @@ _fala_thread = None
 _fala_thread_lock = threading.Lock()
 _TTS_ASSINCRONO = os.getenv("LUNA_TTS_ASYNC") == "1"
 
+
 def _configurar_engine(engine):
     engine.setProperty("rate", 180)  # Velocidade da fala
     engine.setProperty("volume", 1.0)  # Volume máximo
@@ -19,6 +20,7 @@ def _configurar_engine(engine):
         if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
             engine.setProperty("voice", voice.id)
             break
+
 
 def _fala_worker():
     engine = None
@@ -43,6 +45,7 @@ def _fala_worker():
         finally:
             _fala_queue.task_done()
 
+
 def _iniciar_fala_thread():
     global _fala_thread
     if _fala_thread and _fala_thread.is_alive():
@@ -53,20 +56,25 @@ def _iniciar_fala_thread():
         _fala_thread = threading.Thread(target=_fala_worker)
         _fala_thread.start()
 
+
 def _encerrar_fala_thread():
     if _fala_thread and _fala_thread.is_alive():
         _fala_queue.put(None)
         _fala_thread.join(timeout=5)
 
+
 atexit.register(_encerrar_fala_thread)
 
 
+    Converte texto em áudio.
     if _TTS_ASSINCRONO:
         _iniciar_fala_thread()
         _fala_queue.put(texto_limpo)
         return
 
         _configurar_engine(engine)
+
+
 _fala_thread_lock = threading.Lock()
 _engine = None
 _engine_lock = threading.Lock()
