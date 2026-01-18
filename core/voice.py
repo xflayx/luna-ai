@@ -1,15 +1,72 @@
+import atexit
+import os
+import queue
+import threading
 
-
-
-        engine.say(str(texto_limpo))
-
-
-    falar("Sistema de voz da Luna inicializado com sucesso.")
-rec = sr.Recognizer()
-mic = sr.Microphone()
 
 _fala_queue = queue.Queue()
 _fala_thread = None
+_fala_thread_lock = threading.Lock()
+_TTS_ASSINCRONO = os.getenv("LUNA_TTS_ASYNC") == "1"
+
+def _configurar_engine(engine):
+    engine.setProperty("rate", 180)  # Velocidade da fala
+    engine.setProperty("volume", 1.0)  # Volume máximo
+
+    # Tenta definir uma voz em Português (Brasil)
+    voices = engine.getProperty("voices")
+    for voice in voices:
+        if "brazil" in voice.name.lower() or "portuguese" in voice.name.lower():
+            engine.setProperty("voice", voice.id)
+            break
+
+def _fala_worker():
+    engine = None
+    try:
+        engine = pyttsx3.init()
+        _configurar_engine(engine)
+    except Exception as e:
+        print(f"❌ ERRO NO ÁUDIO: {e}")
+
+    while True:
+        texto = _fala_queue.get()
+        try:
+            if texto is None:
+                _fala_queue.task_done()
+                return
+            if not engine:
+                continue
+            engine.say(str(texto))
+            engine.runAndWait()
+        except Exception as e:
+            print(f"❌ ERRO NO ÁUDIO: {e}")
+        finally:
+            _fala_queue.task_done()
+
+def _iniciar_fala_thread():
+    global _fala_thread
+    if _fala_thread and _fala_thread.is_alive():
+        return
+    with _fala_thread_lock:
+        if _fala_thread and _fala_thread.is_alive():
+            return
+        _fala_thread = threading.Thread(target=_fala_worker)
+        _fala_thread.start()
+
+def _encerrar_fala_thread():
+    if _fala_thread and _fala_thread.is_alive():
+        _fala_queue.put(None)
+        _fala_thread.join(timeout=5)
+
+atexit.register(_encerrar_fala_thread)
+
+
+    if _TTS_ASSINCRONO:
+        _iniciar_fala_thread()
+        _fala_queue.put(texto_limpo)
+        return
+
+        _configurar_engine(engine)
 _fala_thread_lock = threading.Lock()
 _engine = None
 _engine_lock = threading.Lock()
