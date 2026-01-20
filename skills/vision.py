@@ -80,6 +80,7 @@ Responda como se estivesse falando ao vivo."""
 
         # Chama Gemini Vision
         resposta = analisar_imagem_llm(image_path, prompt).strip()
+        STATE.set_ultima_visao(resposta)
 
         # Limpa arquivo temporário
         if os.path.exists(image_path):

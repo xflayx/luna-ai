@@ -1,5 +1,6 @@
 # config/state.py
 from datetime import datetime
+from core import memory
 
 
 class StateManager:
@@ -14,6 +15,8 @@ class StateManager:
         self.em_conversa_ativa = False
         self.historico = []
         self.ultima_skill_usada = None
+        self.ultima_visao = None
+        self.ultima_visao_ts = None
 
         # Ativacao
         self.modo_ativacao = "assistente"
@@ -32,6 +35,7 @@ class StateManager:
         })
         if len(self.historico) > 20:
             self.historico = self.historico[-20:]
+        memory.adicionar_memoria_curta(f"U: {comando}\nL: {resposta}", origem="dialogo")
 
     def obter_contexto_curto(self):
         if not self.historico:
@@ -40,6 +44,23 @@ class StateManager:
         return "\n".join(
             [f"U: {i['comando']}\nL: {i['resposta'][:50]}..." for i in ultimas]
         )
+
+    def obter_ultima_resposta(self, max_chars: int = 800):
+        if not self.historico:
+            return None
+        resposta = self.historico[-1].get("resposta", "")
+        if len(resposta) <= max_chars:
+            return resposta
+        return resposta[:max_chars] + "..."
+
+    def set_ultima_visao(self, texto: str):
+        self.ultima_visao = (texto or "").strip()
+        self.ultima_visao_ts = datetime.now().isoformat()
+
+    def get_ultima_visao(self) -> str | None:
+        if not self.ultima_visao:
+            return None
+        return self.ultima_visao
 
     def set_modo_ativacao(self, modo: str) -> bool:
         if modo not in ["assistente", "vtuber"]:

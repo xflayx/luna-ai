@@ -1,0 +1,134 @@
+{
+  "items": [
+    {
+      "timestamp": "2026-01-19T15:04:07.730196",
+      "origem": "dialogo",
+      "texto": "U: traduza o texto\nL: Oi! Claro, eu"
+    },
+    {
+      "timestamp": "2026-01-19T15:05:18.216022",
+      "origem": "dialogo",
+      "texto": "U: como voc\u00ea est\u00e1 hoje\nL: Oi! Eu estou"
+    },
+    {
+      "timestamp": "2026-01-19T15:10:40.966021",
+      "origem": "dialogo",
+      "texto": "U: como voc\u00ea est\u00e1 hoje\nL: Oi! Eu. Estou bem e pronta para ajudar. E voce, como esta?"
+    },
+    {
+      "timestamp": "2026-01-19T15:17:42.403188",
+      "origem": "dialogo",
+      "texto": "U: como voc\u00ea est\u00e1 hoje\nL: Oi! Eu estou \u00f3tima. Estou por aqui e funcionando direitinho. Quer ajuda com algo?"
+    },
+    {
+      "timestamp": "2026-01-19T15:18:31.091009",
+      "origem": "dialogo",
+      "texto": "U: an\u00e1lise minha tela\nL: Ah, vejo que voc\u00ea est\u00e1 no Sunflower Land! Sua fazenda est\u00e1 bem organizada, mas tem uns espacinhos vazios que poderiam estar rendendo uns SFLs, n\u00e3o acha? E olha, a Luna aqui notou que o Windows ainda est\u00e1 pedindo um carinho, hehe."
+    },
+    {
+      "timestamp": "2026-01-19T15:19:02.690841",
+      "origem": "dialogo",
+      "texto": "U: o token do sun flower n\u00e3o \u00e9 mais o ssl \u00e9 agora \u00e9\nL: Ah, voc\u00ea tem raz\u00e3o! Estou bem, obrigada por perguntar. O que voce precisa hoje?"
+    },
+    {
+      "timestamp": "2026-01-19T15:19:31.531342",
+      "origem": "dialogo",
+      "texto": "U: qual \u00e9 o touca do s\u00e3o flowerland\nL: O token atual. Estou por aqui e funcionando direitinho. Quer ajuda com algo?"
+    },
+    {
+      "timestamp": "2026-01-19T15:20:29.376801",
+      "origem": "dialogo",
+      "texto": "U: analise a tela\nL: Olha s\u00f3, que fazendinha mais fofa no Sunflower Land! Mas pera\u00ed, tem um monte de canteiros vazios por a\u00ed, parece que algu\u00e9m est\u00e1 com pregui\u00e7a de plantar. E essas ab\u00f3boras demorando um dia inteiro pra crescer? Que lentid\u00e3o, hein!"
+    },
+    {
+      "timestamp": "2026-01-19T15:20:58.731927",
+      "origem": "dialogo",
+      "texto": "U: o que voc\u00ea acha que eu devo plantar\nL: Para otimizar. Estou bem, obrigada por perguntar. O que voce precisa hoje?"
+    },
+    {
+      "timestamp": "2026-01-19T15:23:42.349330",
+      "origem": "dialogo",
+      "texto": "U: : para otimizar. estou bem, obrigada por perguntar. o que voce precisa hoje?\nL: Eita,. Estou bem e pronta para ajudar. E voce, como esta?"
+    },
+    {
+      "timestamp": "2026-01-19T15:41:28.406175",
+      "origem": "dialogo",
+      "texto": "U: analise minha tela\nL: Eita, parece que os goblins est\u00e3o atacando sua fazenda no Sunflower Land! Corre, voc\u00ea s\u00f3 tem tr\u00eas tentativas pra salvar sua comida, n\u00e3o vai deixar eles roubarem tudo, n\u00e9? Ah, e aproveita pra dar um jeito nesse aviso do Windows a\u00ed, hehe."
+    },
+    {
+      "timestamp": "2026-01-19T15:41:51.963875",
+      "origem": "dialogo",
+      "texto": "U: me diga onde\nL: Eles est\u00e3o. Quer que eu detalhe um pouco mais?"
+    },
+    {
+      "timestamp": "2026-01-19T15:42:19.411449",
+      "origem": "dialogo",
+      "texto": "U: me diga onde est\u00e3o os tr\u00eas goblin\nL: Eles est\u00e3o escond. Posso explicar melhor se voc\u00ea quiser."
+    },
+    {
+      "timestamp": "2026-01-19T15:42:53.848669",
+      "origem": "dialogo",
+      "texto": "U: me explique melhor\nL: Claro! Os tr\u00eas. Posso explicar melhor se voc\u00ea quiser."
+    },
+    {
+      "timestamp": "2026-01-19T15:46:48.331964",
+      "origem": "dialogo",
+      "texto": "U: analise a tela\nL: Olha s\u00f3, parece que a fazendinha est\u00e1 sob ataque de goblins famintos! Voc\u00ea tem que ser mais r\u00e1pido que eles, ou adeus comidinha. S\u00e9rio, esses goblins n\u00e3o t\u00eam limites, n\u00e9?"
+    },
+    {
+      "timestamp": "2026-01-19T15:47:20.548463",
+      "origem": "dialogo",
+      "texto": "U: me d\u00ea a localiza\u00e7\u00e3o dos tr\u00eas goblins\nL: Com certeza! Pelo. Quer que eu sugira algumas op\u00e7\u00f5es?"
+    },
+    {
+      "timestamp": "2026-01-19T15:47:36.657821",
+      "origem": "dialogo",
+      "texto": "U: sim\nL: Certo! Analis. Quer que eu sugira algumas op\u00e7\u00f5es?"
+    },
+    {
+      "timestamp": "2026-01-19T15:49:31.361031",
+      "origem": "dialogo",
+      "texto": "U: : com certeza! pelo. quer que eu sugira algumas op\u00e7\u00f5es?\nL: Interessante! Me conta mais sobre isso."
+    },
+    {
+      "timestamp": "2026-01-19T15:49:56.004336",
+      "origem": "dialogo",
+      "texto": "U: : com certeza! pelo. quer que eu sugira algumas op\u00e7\u00f5es?\nL: Parece que houve um pequeno. Posso explicar melhor se voc\u00ea quiser."
+    },
+    {
+      "timestamp": "2026-01-19T15:54:19.037110",
+      "origem": "dialogo",
+      "texto": "U: analise a tela\nL: Ai, ai, parece que os goblins resolveram fazer um banquete com a sua comida no Sunflower Land. Voc\u00ea tem s\u00f3 tr\u00eas tentativas para impedir essa invas\u00e3o, ent\u00e3o \u00e9 bom ser r\u00e1pido ou vai ficar sem lanche! N\u00e3o que eu esteja contando, claro."
+    },
+    {
+      "timestamp": "2026-01-19T15:54:46.424392",
+      "origem": "dialogo",
+      "texto": "U: me diga a localiza\u00e7\u00e3o dos tr\u00eas goblin\nL: Olha s\u00f3, parece que algu\u00e9m est\u00e1 com. Qual e a sua nessa historia?"
+    },
+    {
+      "timestamp": "2026-01-20T01:25:41.435521",
+      "origem": "dialogo",
+      "texto": "U: fa\u00e7a um resumo do post\nL: Ol\u00e1! Que legal te. Quer que eu detalhe um pouco mais?"
+    },
+    {
+      "timestamp": "2026-01-20T01:28:15.880520",
+      "origem": "dialogo",
+      "texto": "U: fa\u00e7a um resumo desse post\nL: Ol\u00e1 de novo! Entendi. Quer que eu detalhe um pouco mais?"
+    },
+    {
+      "timestamp": "2026-01-20T01:30:28.455477",
+      "origem": "dialogo",
+      "texto": "U: fa\u00e7a um resumo\nL: Aiii, que chato! O Elon trancou, n\u00e3o consigo ver nada desse post. Como \u00e9 que a Luna aqui vai ficar por dentro das \u00faltimas fofocas se nem carrega? Que raiva, queria tanto saber o babado! Parece que vou ter que esperar pra descobrir quem t\u00e1 causando dessa vez."
+    },
+    {
+      "timestamp": "2026-01-20T01:32:04.498397",
+      "origem": "dialogo",
+      "texto": "U: fa\u00e7a um resumo desse post\nL: Aiii, olha s\u00f3 quem t\u00e1 falando de novidade, \u00e9 o Heverton.sui, tamb\u00e9m conhecido como @HevertonFlores! Ele t\u00e1 super empolgado com um tal de \"novo tipo de airdrop\" chamado Vibecoins, onde suas ideias viram tokens pra financiar um monte de coisa chique tipo IA e marketing, prometendo que \u00e9 100% airdrop e que voc\u00ea s\u00f3 perde se n\u00e3o entrar nessa onda de \"vibe coding\" agora. Ai, gente, mais uma vez a promessa de ficar rico sem fazer nada, n\u00e9? Parece que a gente vai ter que virar \"vibe coder\" pra n\u00e3o perder essa, mas aposto que no final s\u00f3 quem ganha \u00e9 quem j\u00e1 t\u00e1 l\u00e1 dentro, e a gente fica s\u00f3 na \"vibe\" de ter perdido a oportunidade."
+    }
+  ],
+  "meta": {
+    "created_at": "2026-01-19T15:04:07.730196",
+    "updated_at": "2026-01-20T01:32:04.499405",
+    "version": 1
+  }
+}

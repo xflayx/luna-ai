@@ -1,47 +1,46 @@
 import atexit
-import asyncio
 import os
 import queue
 import subprocess
 import tempfile
 import threading
+import time
 import winsound
 
 import speech_recognition as sr
 import pyttsx3
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
+from config.env import init_env
 
-try:
-    import edge_tts
-except Exception:
-    edge_tts = None
+init_env()
 
 # Configuracoes do reconhecedor
 rec = sr.Recognizer()
 mic = sr.Microphone()
 
-_fala_queue = queue.Queue()
+_FALA_QUEUE_MAX = int(os.getenv("LUNA_TTS_QUEUE_MAX", "5"))
+_fala_queue = queue.Queue(maxsize=_FALA_QUEUE_MAX)
 _fala_thread = None
 _fala_thread_lock = threading.Lock()
 _TTS_ASSINCRONO = os.getenv("LUNA_TTS_ASYNC") == "1"
 _TTS_ENGINE = os.getenv("LUNA_TTS_ENGINE", "pyttsx3").lower()
-_EDGE_VOICE = os.getenv("LUNA_EDGE_VOICE", "pt-BR-FranciscaNeural")
+_TTS_DEBUG_TIMER = os.getenv("LUNA_TTS_DEBUG_TIMER") == "1"
 _MURF_VOICE = os.getenv("LUNA_MURF_VOICE", "pt-BR-isadora")
 _MURF_API_KEY = os.getenv("MURF_API_KEY", "")
 _FFPLAY_PATH = os.getenv("LUNA_FFPLAY_PATH", "")
 
 
+
 def _fala_worker():
     while True:
-        texto = _fala_queue.get()
+        item = _fala_queue.get()
         try:
-            if texto is None:
+            if item is None:
                 _fala_queue.task_done()
                 return
-            _speak(texto)
+            texto, start_ts = item
+            _speak(texto, start_ts)
         except Exception as e:
             print(f"ERRO NO AUDIO: {e}")
         finally:
@@ -71,29 +70,48 @@ atexit.register(_encerrar_fala_thread)
 def falar(texto):
     texto_limpo = texto.replace("*", "").replace("#", "")
     print(f"\nLUNA: {texto}")
+    start_ts = time.perf_counter()
 
     if _TTS_ASSINCRONO:
         _iniciar_fala_thread()
-        _fala_queue.put(texto_limpo)
+        if _fala_queue.full():
+            try:
+                _fala_queue.get_nowait()
+                _fala_queue.task_done()
+            except queue.Empty:
+                pass
+        _fala_queue.put((texto_limpo, start_ts))
         return
 
     try:
-        _speak(texto_limpo)
+        _speak(texto_limpo, start_ts)
     except Exception as e:
         print(f"ERRO NO AUDIO: {e}")
 
 
-def _speak(texto: str):
-    if _TTS_ENGINE == "edge" and edge_tts:
-        _speak_edge(texto)
+def _log_tts_delay(start_ts: float, etapa: str):
+    if not _TTS_DEBUG_TIMER:
         return
+    if start_ts is None:
+        return
+    delta = time.perf_counter() - start_ts
+    print(f"[TTS DEBUG] {etapa}: {delta:.3f}s")
+
+
+def _log_tts_duration(etapa: str, delta: float):
+    if not _TTS_DEBUG_TIMER:
+        return
+    print(f"[TTS DEBUG] {etapa}: {delta:.3f}s")
+
+
+def _speak(texto: str, start_ts: float | None = None):
     if _TTS_ENGINE == "murf":
-        _speak_murf(texto)
+        _speak_murf(texto, start_ts)
         return
-    _speak_pyttsx3(texto)
+    _speak_pyttsx3(texto, start_ts)
 
 
-def _speak_pyttsx3(texto: str):
+def _speak_pyttsx3(texto: str, start_ts: float | None = None):
     engine = pyttsx3.init()
     engine.setProperty("rate", 180)
     engine.setProperty("volume", 1.0)
@@ -105,34 +123,17 @@ def _speak_pyttsx3(texto: str):
             break
 
     engine.say(str(texto))
+    _log_tts_delay(start_ts, "inicio_fala_pyttsx3")
     engine.runAndWait()
     engine.stop()
     del engine
 
 
-def _speak_edge(texto: str):
-    if not edge_tts:
-        raise RuntimeError("edge_tts nao instalado")
-
-    async def _run():
-        communicate = edge_tts.Communicate(texto, _EDGE_VOICE)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            path = tmp.name
-        try:
-            await communicate.save(path)
-            winsound.PlaySound(path, winsound.SND_FILENAME)
-        finally:
-            try:
-                os.remove(path)
-            except Exception:
-                pass
-
-    asyncio.run(_run())
-
-
-def _speak_murf(texto: str):
+def _speak_murf(texto: str, start_ts: float | None = None):
     if not _MURF_API_KEY:
         raise RuntimeError("MURF_API_KEY nao definido")
+
+    print(f"[TTS MURF TEXTO]: {texto}")
 
     if not _tem_ffplay():
         raise RuntimeError("ffplay nao encontrado no PATH (instale ffmpeg)")
@@ -155,23 +156,40 @@ def _speak_murf(texto: str):
         "channelType": "MONO",
     }
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-        path = tmp.name
-
     try:
+        t0 = time.perf_counter()
         with requests.post(url, headers=headers, json=data, stream=True, timeout=30) as resp:
             if resp.status_code != 200:
                 raise RuntimeError(f"Murf erro: {resp.status_code}")
-            with open(path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=4096):
-                    if chunk:
-                        f.write(chunk)
-        _tocar_mp3_ffplay(path)
-    finally:
+            t_headers = time.perf_counter()
+            t_download = _tocar_mp3_ffplay_stream(resp, start_ts)
+        _log_tts_duration("murf_resposta", t_headers - t0)
+        _log_tts_duration("murf_total", t_download - t0)
+    except Exception:
+        # Fallback para arquivo local se streaming falhar.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+            path = tmp.name
         try:
-            os.remove(path)
-        except Exception:
-            pass
+            t0 = time.perf_counter()
+            with requests.post(url, headers=headers, json=data, stream=True, timeout=30) as resp:
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Murf erro: {resp.status_code}")
+                t_headers = time.perf_counter()
+                with open(path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=4096):
+                        if chunk:
+                            f.write(chunk)
+            t_download = time.perf_counter()
+            _log_tts_duration("murf_resposta", t_headers - t0)
+            _log_tts_duration("murf_download", t_download - t_headers)
+            _log_tts_duration("murf_total", t_download - t0)
+            _log_tts_delay(start_ts, "inicio_fala_murf")
+            _tocar_mp3_ffplay(path)
+        finally:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
 
 def _tem_ffplay() -> bool:
@@ -198,6 +216,39 @@ def _tocar_mp3_ffplay(path: str):
         cmd,
         check=False,
     )
+
+
+def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
+    if _FFPLAY_PATH and os.path.isfile(_FFPLAY_PATH):
+        cmd = [_FFPLAY_PATH, "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0"]
+    else:
+        cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0"]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    started = False
+    try:
+        for chunk in resp.iter_content(chunk_size=4096):
+            if not chunk:
+                continue
+            if proc.stdin is None:
+                break
+            proc.stdin.write(chunk)
+            if not started:
+                started = True
+                _log_tts_delay(start_ts, "inicio_fala_murf")
+        if proc.stdin:
+            proc.stdin.close()
+        proc.wait()
+    finally:
+        if proc.stdin and not proc.stdin.closed:
+            proc.stdin.close()
+        if proc.poll() is None:
+            proc.kill()
+    return time.perf_counter()
 
 
 def ouvir():

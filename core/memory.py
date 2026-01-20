@@ -5,52 +5,126 @@ from datetime import datetime
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-MEMORY_PATH = os.path.join(DATA_DIR, "memoria.json")
+MEMORY_DIR = os.path.join(BASE_DIR, "memory")
+SHORT_MEMORY_PATH = os.path.join(MEMORY_DIR, "short_term.json")
+LONG_MEMORY_PATH = os.path.join(MEMORY_DIR, "long_term.json")
+LEGACY_MEMORY_PATH = os.path.join(BASE_DIR, "data", "memoria.json")
 
 
-def _load_all():
-    if not os.path.isfile(MEMORY_PATH):
+def _now_iso():
+    return datetime.now().isoformat()
+
+
+def _empty_store():
+    return {"items": [], "meta": {"created_at": "", "updated_at": "", "version": 1}}
+
+
+def _load_store(path):
+    if not os.path.isfile(path):
+        return _empty_store()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get("items"), list):
+            return data
+        if isinstance(data, list):
+            store = _empty_store()
+            store["items"] = data
+            return store
+    except Exception:
+        pass
+    return _empty_store()
+
+
+def _save_store(path, store):
+    os.makedirs(MEMORY_DIR, exist_ok=True)
+    now = _now_iso()
+    meta = store.get("meta") or {}
+    if not meta.get("created_at"):
+        meta["created_at"] = now
+    meta["updated_at"] = now
+    meta["version"] = meta.get("version", 1)
+    store["meta"] = meta
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(store, f, ensure_ascii=True, indent=2)
+
+
+def _load_legacy_items():
+    if not os.path.isfile(LEGACY_MEMORY_PATH):
         return []
     try:
-        with open(MEMORY_PATH, "r", encoding="utf-8") as f:
+        with open(LEGACY_MEMORY_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, list):
             return data
+        if isinstance(data, dict) and isinstance(data.get("items"), list):
+            return data.get("items", [])
     except Exception:
         pass
     return []
 
 
-def _save_all(items):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(MEMORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(items, f, ensure_ascii=False, indent=2)
+def _ensure_long_memory_initialized():
+    if os.path.isfile(LONG_MEMORY_PATH):
+        return
+    legacy_items = _load_legacy_items()
+    if not legacy_items:
+        return
+    store = _empty_store()
+    store["items"] = legacy_items
+    _save_store(LONG_MEMORY_PATH, store)
 
 
-def adicionar_memoria(texto, origem="usuario"):
+def _add_item(path, texto, origem="usuario", max_items=None):
     texto_limpo = (texto or "").strip()
     if not texto_limpo:
         return False
-    items = _load_all()
-    items.append(
+    store = _load_store(path)
+    store.setdefault("items", []).append(
         {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": _now_iso(),
             "origem": origem,
             "texto": texto_limpo,
         }
     )
-    _save_all(items)
+    if max_items is not None and len(store["items"]) > max_items:
+        store["items"] = store["items"][-max_items:]
+    _save_store(path, store)
     return True
 
 
+def adicionar_memoria(texto, origem="usuario"):
+    _ensure_long_memory_initialized()
+    return _add_item(LONG_MEMORY_PATH, texto, origem=origem)
+
+
+def adicionar_memoria_curta(texto, origem="usuario", max_items=50):
+    return _add_item(SHORT_MEMORY_PATH, texto, origem=origem, max_items=max_items)
+
+
 def listar_memorias(limit=10):
-    items = _load_all()
+    _ensure_long_memory_initialized()
+    items = _load_store(LONG_MEMORY_PATH).get("items", [])
+    return items[-limit:]
+
+
+def listar_memorias_curtas(limit=10):
+    items = _load_store(SHORT_MEMORY_PATH).get("items", [])
     return items[-limit:]
 
 
 def buscar_memorias(consulta, limit=3):
-    items = _load_all()
+    _ensure_long_memory_initialized()
+    items = _load_store(LONG_MEMORY_PATH).get("items", [])
+    return _buscar_itens(items, consulta, limit=limit)
+
+
+def buscar_memorias_curtas(consulta, limit=3):
+    items = _load_store(SHORT_MEMORY_PATH).get("items", [])
+    return _buscar_itens(items, consulta, limit=limit)
+
+
+def _buscar_itens(items, consulta, limit=3):
     if not items:
         return []
     texto = (consulta or "").lower()

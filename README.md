@@ -1,47 +1,76 @@
-# 🤖 LUNA - Assistente Virtual Inteligente
+﻿# LUNA - Assistente Virtual Inteligente
 
-A **Luna** é uma assistente virtual personalizada desenvolvida em Python, integrada com o modelo **Gemini 1.5 Flash**. Ela combina automação de tarefas, visão computacional e uma personalidade sarcástica e inteligente.
+Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa modelos LLM (Gemini) para conversar, resumir conteudos e responder com personalidade.
 
-## 🚀 Funcionalidades Principais
+## O que ela faz
+- Conversa com memoria curta e respostas naturais
+- Luna Vision: analise da tela por screenshot
+- Web Reader: resumo de pagina atual e posts do X/Twitter
+- YouTube Summary: resumo via transcricao
+- Noticias: busca e resumo via SerpAPI
+- Precos: consulta de cripto via CoinMarketCap
+- Sistema: status do PC (CPU/RAM)
+- Sequencias: gravar e executar macros de teclado/mouse
+- Atalhos radial e guia de jogos baseado na tela
 
-### 👁️ Luna Vision (Análise de Tela)
-A Luna consegue "enxergar" o que você está fazendo e responder a perguntas específicas sobre a sua tela.
-* **Resumos:** "Luna, analise minha tela e faça um breve resumo do texto."
-* **Identificação:** "Luna, veja a imagem e me diga qual é esse personagem."
-* **Sugestões:** "Luna, analise a tela e recomende um anime baseado no que estou vendo."
+## Requisitos
+- Python 3.10+
+- Windows recomendado para voz e automacao
 
-## 🤖 Sequências (Macros)
-Módulo de automação de periféricos controlado por voz.
+## Instalacao
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
 
-| Comando | Descrição |
-| :--- | :--- |
-| **"Luna gravar sequência"** | Inicia a gravação de movimentos do mouse e teclas pressionadas. |
-| **"Luna parar sequência"** | Interrompe a gravação e solicita um nome para salvar o arquivo. |
-| **"Luna executar sequência [nome]"** | Carrega a sequência desejada. |
-| **Loop** | Após o comando de execução, a Luna perguntará quantas vezes a sequência deve ser repetida. |."
+Notas:
+- No Windows, o pyaudio pode exigir instalacao extra:
+  ```bash
+  pip install pipwin
+  pipwin install pyaudio
+  ```
 
-### 🧠 Opinion Engine & Contexto
-A Luna possui memória de curto prazo e um motor de personalidade que permite conversas fluidas sem perder o fio da meada. Ela detecta intenções de forma flexível, aceitando variações naturais da fala.
+## Configuracao (.env)
+Crie um arquivo `.env` com as chaves que voce usar:
 
-## 🛠️ Tecnologias Utilizadas
-* **Python 3.10+**
-* **Google Generative AI (Gemini API)**
-* **PyAutoGUI** (Para automação de sequências)
-* **Pillow** (Para captura e processamento de imagens)
-* **SpeechRecognition & Pyttsx3** (Interface de voz)
+```
+GEMINI_API_KEY=...
+# opcionais para rotacao
+GEMINI_API_KEY_2=...
+GEMINI_API_KEY_3=...
 
-## 📁 Estrutura do Projeto
-* `/core`: Motores de intenção, roteamento e voz.
-* `/skills`: Habilidades específicas como Visão, Preço e Sequências.
-* `/data`: Local onde as sequências salvas são armazenadas em formato JSON.
-* `/config`: Arquivos de configuração de personalidade e estado do sistema.
+# resumo de YouTube
+GROQ_API_KEY=...
+LUNA_GROQ_MODEL=llama-3.1-8b-instant
 
-## ⚙️ Configuração
-1. Clone o repositório.
-2. Instale as dependências: `pip install -r requirements.txt`.
-3. Configure sua `API_KEY` do Gemini no arquivo de configuração.
-4. Execute o projeto: `python main.py`.
+# noticias
+SERPAPI_API_KEY=...
 
-## 🎤 Comandos de Ativação
-Todos os comandos devem ser precedidos pelo nome **Luna**.
-* *Exemplo:* "Luna, qual o preço do Bitcoin?" ou "Luna, analise minha tela." [cite: 2025-12-30]
+# precos cripto
+COINMARKETCAP_API_KEY=...
+
+# TTS externo (opcional)
+MURF_API_KEY=...
+```
+
+## Uso rapido
+Exemplos de comandos por voz:
+- "Luna, analise minha tela"
+- "Luna, leia esse site" (usa a URL atual do navegador)
+- "Luna, faca um resumo desse post" (X/Twitter)
+- "Luna, resumo do youtube https://..."
+- "Luna, preco do bitcoin"
+- "Luna, noticias de tecnologia"
+- "Luna, gravar sequencia" / "Luna, executar sequencia NOME"
+
+## Estrutura do projeto
+- `core`: roteamento, intencoes e voz
+- `skills`: habilidades (vision, web_reader, youtube_summary, etc)
+- `llm`: integracoes com LLM
+- `config`: estado e configuracoes
+- `data`: macros/seqs gravadas
+- `ui`: dashboard
+
+## Observacoes
+- O Web Reader depende do navegador aberto e pode falhar em sites com login.
+- Para X/Twitter, logue no navegador antes do resumo.

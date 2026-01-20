@@ -19,7 +19,7 @@ API_KEYS = [k for k in API_KEYS if k]
 if not API_KEYS:
     raise ValueError("❌ Nenhuma API key configurada no .env")
 
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-2.5-flash"
 
 # Índice da chave atual
 _current_key_index = 0

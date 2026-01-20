@@ -3,13 +3,13 @@
 import os
 import re
 from datetime import datetime
-from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from core import memory
 from config.state import STATE
+from config.env import init_env
 
-load_dotenv()
+init_env()
 
 # ========================================
 # METADADOS DA SKILL (Padrão de Plugin)
@@ -41,7 +41,7 @@ API_KEYS = [
 ]
 API_KEYS = [k for k in API_KEYS if k]
 
-MODEL = "gemini-3-flash-preview"
+MODEL = "gemini-2.5-flash"
 _current_key_index = 0
 
 def _obter_cliente():
@@ -57,6 +57,17 @@ def _trocar_chave():
 
 # Histórico de conversa (memória)
 historico_conversa = []
+_OPINIAO_GATILHOS = [
+    "o que voce acha",
+    "o que acha",
+    "sua opiniao",
+    "opniao",
+    "opina",
+    "boa ou ruim",
+    "vai dar certo",
+    "da certo",
+    "vale a pena",
+]
 MAX_HISTORICO = 10  # Mantém últimas 10 mensagens
 
 
@@ -178,6 +189,9 @@ def _criar_prompt_conversa(mensagem_usuario: str) -> list:
 
 def _conversar_com_gemini(mensagem: str) -> str:
     """Usa Gemini com fallback de chaves"""
+    msg_lower = mensagem.lower()
+    pediu_opiniao = any(p in msg_lower for p in _OPINIAO_GATILHOS)
+
 
     
     for tentativa in range(len(API_KEYS)):
@@ -198,10 +212,30 @@ def _conversar_com_gemini(mensagem: str) -> str:
                     [f"- {m['texto']}" for m in memorias]
                 ) + "\n\n"
 
+            ultima_resposta = STATE.obter_ultima_resposta()
+            ultima_visao = STATE.get_ultima_visao()
+            contexto_curto = STATE.obter_contexto_curto()
+            contexto_sistema = ""
+            if ultima_resposta:
+                contexto_sistema = f"ULTIMO CONTEUDO RECENTE:\n{ultima_resposta}\n\n"
+            if ultima_visao:
+                contexto_sistema += f"ULTIMA VISAO:\n{ultima_visao}\n\n"
+
+            opiniao_instrucao = ""
+            if pediu_opiniao and ultima_resposta:
+                opiniao_instrucao = (
+                    "INSTRUCAO: O usuario pediu sua opiniao sobre o ULTIMO CONTEUDO RECENTE. "
+                    "Responda com 3 a 5 frases completas, diga se parece bom, ruim ou incerto e justifique.\n\n"
+                )
+
             prompt_completo = f"""{system_prompt}
 
-{memoria_txt}HISTÓRICO RECENTE:
+{memoria_txt}{contexto_sistema}{opiniao_instrucao}HISTORICO RECENTE:
 {contexto_historico if contexto_historico else "(primeira interação)"}
+
+CONTEXTO CURTO DO SISTEMA:
+{contexto_curto}
+
 
 MENSAGEM ATUAL DO USUÁRIO: {mensagem}
 
@@ -221,9 +255,26 @@ SUA RESPOSTA:"""
             )
             
             resposta = response.text.strip()
+            if _precisa_reforco(resposta, mensagem):
+                prompt_reforco = (
+                    prompt_completo
+                    + "\n\nINSTRUCAO EXTRA: Responda com 2 a 4 frases completas, "
+                    + "detalhando o pedido do usuario. Evite respostas vagas ou incompletas."
+                )
+                response = client.models.generate_content(
+                    model=MODEL,
+                    contents=prompt_reforco,
+                    config=types.GenerateContentConfig(
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                    )
+                )
+                resposta = response.text.strip()
             resposta = _normalizar_resposta(resposta, modo)
             if modo == 'vtuber':
                 resposta = _ajustar_resposta_vtuber(resposta)
+            else:
+                resposta = _ajustar_resposta_assistente(resposta, mensagem)
             historico_conversa.append({"role": "user", "parts": [mensagem]})
             historico_conversa.append({"role": "model", "parts": [resposta]})
             return resposta
@@ -238,6 +289,19 @@ SUA RESPOSTA:"""
             break
     
     return _resposta_fallback(mensagem)
+
+def _precisa_reforco(resposta: str, mensagem: str) -> bool:
+    limpa = (resposta or "").strip()
+    if not limpa:
+        return True
+    frases = [f for f in re.split(r"[.!?]+", limpa) if f.strip()]
+    if len(limpa) < 40 or len(frases) < 2:
+        return True
+    msg_lower = (mensagem or "").lower()
+    if any(k in msg_lower for k in ["onde", "explique", "explica", "detalhe", "detalhar", "me diga"]):
+        if len(limpa) < 80 or len(frases) < 2:
+            return True
+    return False
 
 
 
@@ -254,7 +318,7 @@ def _normalizar_resposta(resposta: str, modo: str) -> str:
         limpa = limpa.replace("Drawing on my sarcastic but helpful persona.", "Ok, sem modo tutorial. Vamos direto ao ponto.")
 
     # Evita terminar com frase cortada
-    if modo == "vtuber" and not limpa.endswith((".", "!", "?")):
+    if not limpa.endswith((".", "!", "?")):
         limpa += "."
     return limpa
 
@@ -277,6 +341,34 @@ def _ajustar_resposta_vtuber(resposta: str) -> str:
             base = limpa
         else:
             base = limpa + "."
+        return base + choice(complementos)
+    return limpa
+
+def _ajustar_resposta_assistente(resposta: str, mensagem: str) -> str:
+    limpa = resposta.strip()
+    if not limpa:
+        return limpa
+
+    frases = [f for f in re.split(r"[.!?]+", limpa) if f.strip()]
+    if len(limpa) < 40 or len(frases) < 2:
+        if "?" in limpa:
+            return limpa
+        from random import choice
+        msg_lower = (mensagem or "").lower()
+        saudacao = any(s in msg_lower for s in ["oi", "olá", "ola", "tudo bem", "como vai", "como você", "como voce"])
+        if saudacao:
+            complementos = [
+                " Estou bem e pronta para ajudar. E você, como está?",
+                " Estou por aqui e funcionando direitinho. Quer ajuda com algo?",
+                " Estou bem, obrigada por perguntar. O que você precisa hoje?",
+            ]
+        else:
+            complementos = [
+                " Quer que eu detalhe um pouco mais?",
+                " Quer que eu sugira algumas opções?",
+                " Posso explicar melhor se você quiser.",
+            ]
+        base = limpa if limpa.endswith((".", "!", "?")) else limpa + "."
         return base + choice(complementos)
     return limpa
 

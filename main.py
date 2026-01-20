@@ -2,6 +2,7 @@ from core.voice import ouvir, falar
 from core.intent import detectar_intencao
 from core.router import processar_comando
 from config.state import STATE
+from config.env import init_env
 import sys
 import signal
 import subprocess
@@ -10,21 +11,29 @@ import logging
 import os
 import time
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("Luna")
 logging.getLogger("comtypes").setLevel(logging.ERROR)
 logging.getLogger("comtypes.client._code_cache").setLevel(logging.ERROR)
 
+init_env()
+
 
 def status(msg):
-    print(msg)
+    logger.info(msg)
 
 
 def encerrar(sig=None, frame=None):
-    status("🛑 Encerrando a Luna...")
+    status("Encerrando a Luna...")
     falar("Encerrando a Luna.")
 
     if "processo_menu" in globals() and processo_menu:
         try:
             processo_menu.terminate()
+            processo_menu.wait(timeout=3)
         except Exception:
             pass
 
@@ -32,6 +41,8 @@ def encerrar(sig=None, frame=None):
 
 
 signal.signal(signal.SIGINT, encerrar)
+if hasattr(signal, "SIGTERM"):
+    signal.signal(signal.SIGTERM, encerrar)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -52,14 +63,13 @@ if os.path.exists(caminho_menu):
         time.sleep(1.5)
 
         if processo_menu.poll() is None:
-            status(f"✅ Menu radial rodando (PID: {processo_menu.pid})")
-            status("🧭 Botao lateral | Alt+Q | 'abrir menu'")
+            status(f"Menu radial rodando (PID: {processo_menu.pid})")
         else:
-            status("⚠️ Menu radial nao iniciou")
+            status("Menu radial nao iniciou")
     except Exception as e:
-        status(f"⚠️ Menu radial: {e}")
+        status(f"Menu radial: {e}")
 else:
-    status("⚠️ Menu radial nao encontrado")
+    status("Menu radial nao encontrado")
 
 status("🟢 LUNA ONLINE")
 
@@ -75,7 +85,7 @@ try:
                 if texto_clip and texto_clip.lower().startswith("luna"):
                     cmd = texto_clip
                     pyperclip.copy("")
-                    status(f"📋 Comando via Menu: {cmd}")
+                    status(f"📋 Comando via menu: {cmd}")
             except Exception:
                 pass
 
@@ -98,10 +108,10 @@ try:
 
             if not intent:
                 if not cmd.lower().startswith("luna"):
-                    status("⚠️ Nenhuma intencao reconhecida")
+                    status("Nenhuma intencao reconhecida")
                     continue
         else:
-            status("⚠️ Modo direto: capturando dados da sequencia...")
+            status("✍️ Modo direto: capturando dados da sequencia...")
 
         resposta = processar_comando(cmd, intent)
 
@@ -109,7 +119,7 @@ try:
             status("🗣️ Falando...")
             falar(resposta)
         else:
-            status("⚠️ Nenhuma resposta gerada")
+            status("Nenhuma resposta gerada")
 
         time.sleep(0.1)
 except KeyboardInterrupt:
