@@ -13,6 +13,8 @@ Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa mode
 - Sistema: status do PC (CPU/RAM)
 - Sequencias: gravar e executar macros de teclado/mouse
 - Atalhos radial e guia de jogos baseado na tela
+- STT via Groq ASR com fallback para Google
+- System prompt via YAML com fallback para system_message.txt
 
 ## Requisitos
 - Python 3.10+
@@ -43,6 +45,8 @@ GEMINI_API_KEY_3=...
 # resumo de YouTube
 GROQ_API_KEY=...
 LUNA_GROQ_MODEL=llama-3.1-8b-instant
+LUNA_GROQ_STT_MODEL=whisper-large-v3
+LUNA_STT_ENGINE=groq
 
 # noticias
 SERPAPI_API_KEY=...
@@ -71,6 +75,12 @@ Exemplos de comandos por voz:
 - `config`: estado e configuracoes
 - `data`: macros/seqs gravadas
 - `ui`: dashboard
+- `system_message.yaml`: prompt principal (fallback para `system_message.txt`)
+
+## Testes
+```bash
+pytest tests/ -v
+```
 
 ## Observacoes
 - O Web Reader depende do navegador aberto e pode falhar em sites com login.
