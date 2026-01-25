@@ -186,11 +186,13 @@ const menuStructure = {
     },
     {
       id: 'sequencias',
-      label: 'Sequências',
-      iconSvg: 'sequencias.svg',
-      icon: '⚡',
-      color: '#fa709a',
-      dynamic: true
+      label: 'Sequencias',
+      icon: 'S',
+      color: '#667eea',
+      items: [
+        { id: 'gravar_seq', label: 'Gravar sequencia', icon: '+', cmd: 'Luna, gravar sequencia' },
+        { id: 'parar_seq', label: 'Parar sequencia', icon: '⏹', cmd: 'Luna, parar sequencia' }
+      ]
     },
     {
       id: 'web',
@@ -412,8 +414,11 @@ async function selectItem(item, startAngle, endAngle) {
       loadingEl.classList.remove('show');
     }
     
+    // Opção 1: ao entrar em um item com submenu, renderiza o menu novo
+    // em círculo completo e REMOVE a "fatia" (subGroup) para não duplicar.
     await renderMain(item);
-    renderSub(item.items, startAngle, endAngle);
+    document.getElementById('subGroup').innerHTML = '';
+    // renderSub(item.items, startAngle, endAngle);
   } else if (item.cmd) {
     executeCommand(item.cmd);
   }

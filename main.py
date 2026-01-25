@@ -82,10 +82,11 @@ try:
         if not cmd:
             try:
                 texto_clip = pyperclip.paste().strip()
-                if texto_clip and texto_clip.lower().startswith("luna"):
-                    cmd = texto_clip
+                menu_prefix = "@menu:"
+                if texto_clip and texto_clip.lower().startswith(menu_prefix):
+                    cmd = texto_clip[len(menu_prefix):].strip()
                     pyperclip.copy("")
-                    status(f"📋 Comando via menu: {cmd}")
+                    status(f"📌 Comando via menu: {cmd}")
             except Exception:
                 pass
 

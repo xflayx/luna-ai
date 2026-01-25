@@ -48,31 +48,25 @@ def executar(cmd: str) -> str:
 
     contexto = STATE.obter_contexto_curto()
     
-    # Prompt específico por tipo
+    # Prompt específico por tipo - CURTO para evitar cortes
     if "x.com" in url or "twitter.com" in url:
-        prompt = f"""Você é a Luna, VTuber fofoqueira.
-Contexto: {contexto}
+        prompt = f"""Luna, VTuber. Contexto: {contexto}
 
-Leia este POST DO TWITTER/X:
-1. Quem postou (nome e @)
-2. O que disse (2-4 frases)
-3. Se tem imagem/meme, descreva
-4. Dê sua opinião sarcástica se for polêmico
-5. Se aparecer só login: "O Elon trancou, não consigo ver."
+Leia o post do X/Twitter. Responda em NO MAXIMO 3 frases curtas:
+- Quem postou e o que disse
+- Se tiver imagem, descreva brevemente
+- Se aparecer tela de login: "O Elon trancou."
 
-Texto corrido, sem *, -, #. 3-5 frases."""
+Sem listas, sem *, sem #. Resposta COMPLETA em 3 frases."""
     else:
-        prompt = f"""Você é a Luna, assistente IA.
-Contexto: {contexto}
+        prompt = f"""Luna, assistente. Contexto: {contexto}
 
-Faça um RESUMO COMPLETO desta página:
-1. Tema/assunto principal
-2. 3-5 pontos mais importantes
-3. Dados, números, datas relevantes
-4. Ignore menus, ads, cookies
+Resuma esta pagina em NO MAXIMO 4 frases curtas:
+- Tema principal
+- 2-3 pontos importantes
+- Ignore menus e anuncios
 
-Seja clara e objetiva. Use 4-8 frases para cobrir o conteúdo.
-Texto corrido, sem *, -, #."""
+Sem listas, sem *, sem #. Resposta COMPLETA em 4 frases."""
 
     try:
         resposta = analisar_imagem_llm(caminho_imagem, prompt)

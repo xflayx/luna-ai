@@ -24,10 +24,13 @@ class RouterLuna:
         if not os.path.isdir(skills_dir):
             logger.warning("Diretorio de skills nao encontrado")
             return
+        ignorar = {"conversa1.py", "vision1.py"}
         for nome in os.listdir(skills_dir):
             if not nome.endswith(".py"):
                 continue
             if nome.startswith("_") or nome == "__init__.py":
+                continue
+            if nome in ignorar:
                 continue
             self.skill_modulos.append(nome[:-3])
         self.skill_modulos.sort()

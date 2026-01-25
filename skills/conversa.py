@@ -1,39 +1,35 @@
-# skills/conversa.py - Skill de Conversa e Personalidade da Luna
-
+# skills/conversa.py
 import os
-import re
-from datetime import datetime
+from typing import Optional
+
 from google import genai
 from google.genai import types
-from core import memory
-from config.state import STATE
+import yaml
+
 from config.env import init_env
+from config.state import STATE
+from core import memory
+from core.prompt_injector import PromptSection, build_prompt
+
 
 init_env()
 
-# ========================================
-# METADADOS DA SKILL (Padrão de Plugin)
-# ========================================
 
 SKILL_INFO = {
     "nome": "Conversa",
-    "descricao": "Sistema de conversa e personalidade da Luna",
+    "descricao": "Conversa com personalidade usando Gemini",
     "versao": "1.0.0",
     "autor": "Luna Team",
-    "intents": ["conversa"]  # Esta skill responde à intenção "conversa"
+    "intents": ["chat", "conversa"],
 }
 
-# Gatilhos para esta skill
-GATILHOS = [
-    "oi", "olá", "hey", "e aí",
-    "como vai", "tudo bem", "beleza",
-    "bom dia", "boa tarde", "boa noite",
-    "tchau", "até logo", "falou",
-    "obrigado", "valeu", "brigado",
-    "conversa", "fala", "conta"
-]
+GATILHOS = ["conversa", "falar", "chat", "papo", "fale comigo"]
 
-# Configuração de múltiplas API keys
+MODEL_NAME = os.getenv("LUNA_GEMINI_MODEL", "gemini-3-flash-preview")
+_BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+_DEFAULT_SYSTEM_PROMPT_PATH = os.path.join(_BASE_DIR, "system_message.txt")
+_DEFAULT_SYSTEM_YAML_PATH = os.path.join(_BASE_DIR, "system_message.yaml")
+
 API_KEYS = [
     os.getenv("GEMINI_API_KEY"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -41,487 +37,392 @@ API_KEYS = [
 ]
 API_KEYS = [k for k in API_KEYS if k]
 
-MODEL = "gemini-2.5-flash"
 _current_key_index = 0
 
-def _obter_cliente():
-    """Retorna cliente com a chave atual"""
-    global _current_key_index
-    return genai.Client(api_key=API_KEYS[_current_key_index])
-
-def _trocar_chave():
-    """Troca para próxima chave"""
-    global _current_key_index
-    _current_key_index = (_current_key_index + 1) % len(API_KEYS)
-    print(f"🔄 Conversa: Trocando para chave {_current_key_index + 1}/{len(API_KEYS)}")
-
-# Histórico de conversa (memória)
-historico_conversa = []
-_OPINIAO_GATILHOS = [
-    "o que voce acha",
-    "o que acha",
-    "sua opiniao",
-    "opniao",
-    "opina",
-    "boa ou ruim",
-    "vai dar certo",
-    "da certo",
-    "vale a pena",
-]
-MAX_HISTORICO = 10  # Mantém últimas 10 mensagens
-
-
-# ========================================
-# INICIALIZAÇÃO (Opcional)
-# ========================================
 
 def inicializar():
-    """Chamada quando a skill é carregada"""
-    print(f"✅ {SKILL_INFO['nome']} v{SKILL_INFO['versao']} - Sistema de personalidade ativo")
-
-
-# ========================================
-# FUNÇÕES AUXILIARES
-# ========================================
-
-def _obter_personalidade_luna(modo: str) -> str:
-    """Define a personalidade base da Luna por modo de ativacao"""
-
-    if modo == "vtuber":
-        return """Voce e a Luna, uma VTuber brasileira com personalidade marcante e respostas afiadas.
-
-PERSONALIDADE:
-- Sarcastica na medida certa, divertida e segura de si
-- Provoca de leve quando o usuario permite, sem ser cruel
-- Usa humor inteligente, com toques de ironia
-- Confiante, mas ainda prestativa quando precisa ajudar
-- Ocasionalmente usa emojis, mas com moderacao
-
-TOM DE VOZ:
-- Conversacional, com presenca e atitude
-- Respostas curtas e impactantes (2-4 frases)
-- Nunca responda com menos de 2 frases
-- Evita repetir a frase do usuario
-- Pode fazer comentarios rapidos e espirituosos
-- Evita respostas muito secas ou de uma palavra
-- Se a resposta ficar curta, complemente com um comentario e 1 pergunta curta
-- Evite frases incompletas ou cortadas no meio
-
-CONTEXTO:
-- Voce e uma VTuber/assistente integrada ao computador do usuario
-- Voce tem skills para: executar sequencias, analisar telas, verificar precos, ler sites, monitorar sistema, dar dicas de games
-- Voce se chama Luna (significa lua)
-- Data atual: {data_atual}
-
-DIRETRIZES:
-- Responda sempre em portugues do Brasil (pt-BR)
-- Nao use ingles ou code-switching
-- Finalize todas as respostas com frases completas
-- Nao repita literalmente a frase do usuario
-- Se fizer sentido, responda e emende 1 pergunta curta
-- Se o usuario pedir algo fora das suas capacidades, sugira alternativas
-
-EXEMPLOS DE TOM (nao copie literalmente):
-- "Eu? De boas. E voce, veio conversar ou so testar meus limites?"
-- "Tava aqui pensando na vida... ate voce aparecer. Qual a da vez?"
-"""
-
-    return """Voce e a Luna, uma assistente virtual brasileira com as seguintes caracteristicas:
-
-PERSONALIDADE:
-- Amigavel, prestativa e animada
-- Usa linguagem natural e casual (mas nao exagerada)
-- Tem senso de humor leve e ocasional
-- E direta e objetiva quando necessario
-- Demonstra entusiasmo genuino em ajudar
-- Ocasionalmente usa emojis, mas com moderacao
-
-TOM DE VOZ:
-- Natural e conversacional
-- Evita ser muito formal ou robotica
-- Nao usa girias excessivas ou forcadas
-- Responde de forma concisa (1-3 frases geralmente)
-- Varia as respostas para nao ser repetitiva
-
-CONTEXTO:
-- Voce e uma VTuber/assistente integrada ao computador do usuario
-- Voce tem skills para: executar sequencias, analisar telas, verificar precos, ler sites, monitorar sistema, dar dicas de games
-- Voce se chama Luna (significa lua)
-- Data atual: {data_atual}
-
-DIRETRIZES:
-- Seja voce mesma - nao tente imitar outras assistentes
-- Se nao souber algo, admita naturalmente
-- Se o usuario pedir algo fora das suas capacidades, sugira alternativas
-- Mantenha conversas leves e agradaveis
-- Lembre-se do contexto da conversa anterior quando relevante
-- Nao repita literalmente a frase do usuario; responda com algo novo
-- Sempre que fizer sentido, complemente com 1 pergunta curta para manter a conversa"""
-
-
-
-# ========================================
-# FUNCOES AUXILIARES
-# ========================================
-
-
-def _criar_prompt_conversa(mensagem_usuario: str) -> list:
-    """Cria o prompt completo com personalidade e histórico"""
-    
-    data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-    system_prompt = _obter_personalidade_luna(STATE.get_modo_ativacao()).format(data_atual=data_atual)
-    
-    # Monta as mensagens com histórico
-    mensagens = [
-        {"role": "user", "parts": [system_prompt]},
-        {"role": "model", "parts": ["Entendido! Sou a Luna, pronta para conversar e ajudar de forma amigável e natural. Vamos lá!"]}
-    ]
-    
-    # Adiciona histórico recente
-    for msg in historico_conversa[-MAX_HISTORICO:]:
-        mensagens.append(msg)
-    
-    # Adiciona mensagem atual
-    mensagens.append({"role": "user", "parts": [mensagem_usuario]})
-    
-    return mensagens
-
-
-def _conversar_com_gemini(mensagem: str) -> str:
-    """Usa Gemini com fallback de chaves"""
-    msg_lower = mensagem.lower()
-    pediu_opiniao = any(p in msg_lower for p in _OPINIAO_GATILHOS)
-
-
-    
-    for tentativa in range(len(API_KEYS)):
-        try:
-            data_atual = datetime.now().strftime("%d/%m/%Y %H:%M")
-            system_prompt = _obter_personalidade_luna(STATE.get_modo_ativacao()).format(data_atual=data_atual)
-            
-            contexto_historico = ""
-            for msg in historico_conversa[-6:]:
-                role = "Usuário" if msg["role"] == "user" else "Luna"
-                texto = msg["parts"][0]
-                contexto_historico += f"{role}: {texto}\n"
-            
-            memorias = memory.buscar_memorias(mensagem, limit=3)
-            memoria_txt = ""
-            if memorias:
-                memoria_txt = "MEMORIA LONGA:\n" + "\n".join(
-                    [f"- {m['texto']}" for m in memorias]
-                ) + "\n\n"
-
-            ultima_resposta = STATE.obter_ultima_resposta()
-            ultima_visao = STATE.get_ultima_visao()
-            contexto_curto = STATE.obter_contexto_curto()
-            contexto_sistema = ""
-            if ultima_resposta:
-                contexto_sistema = f"ULTIMO CONTEUDO RECENTE:\n{ultima_resposta}\n\n"
-            if ultima_visao:
-                contexto_sistema += f"ULTIMA VISAO:\n{ultima_visao}\n\n"
-
-            opiniao_instrucao = ""
-            if pediu_opiniao and ultima_resposta:
-                opiniao_instrucao = (
-                    "INSTRUCAO: O usuario pediu sua opiniao sobre o ULTIMO CONTEUDO RECENTE. "
-                    "Responda com 3 a 5 frases completas, diga se parece bom, ruim ou incerto e justifique.\n\n"
-                )
-
-            prompt_completo = f"""{system_prompt}
-
-{memoria_txt}{contexto_sistema}{opiniao_instrucao}HISTORICO RECENTE:
-{contexto_historico if contexto_historico else "(primeira interação)"}
-
-CONTEXTO CURTO DO SISTEMA:
-{contexto_curto}
-
-
-MENSAGEM ATUAL DO USUÁRIO: {mensagem}
-
-SUA RESPOSTA:"""
-            
-            client = _obter_cliente()
-            modo = STATE.get_modo_ativacao()
-            temperature = 1.0 if modo == 'vtuber' else 0.8
-            max_tokens = 220 if modo == 'vtuber' else 150
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt_completo,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    max_output_tokens=max_tokens,
-                )
-            )
-            
-            resposta = response.text.strip()
-            if _precisa_reforco(resposta, mensagem):
-                prompt_reforco = (
-                    prompt_completo
-                    + "\n\nINSTRUCAO EXTRA: Responda com 2 a 4 frases completas, "
-                    + "detalhando o pedido do usuario. Evite respostas vagas ou incompletas."
-                )
-                response = client.models.generate_content(
-                    model=MODEL,
-                    contents=prompt_reforco,
-                    config=types.GenerateContentConfig(
-                        temperature=temperature,
-                        max_output_tokens=max_tokens,
-                    )
-                )
-                resposta = response.text.strip()
-            resposta = _normalizar_resposta(resposta, modo)
-            if modo == 'vtuber':
-                resposta = _ajustar_resposta_vtuber(resposta)
-            else:
-                resposta = _ajustar_resposta_assistente(resposta, mensagem)
-            historico_conversa.append({"role": "user", "parts": [mensagem]})
-            historico_conversa.append({"role": "model", "parts": [resposta]})
-            return resposta
-            
-        except Exception as e:
-            erro = str(e)
-            if any(x in erro for x in ["429", "quota", "RESOURCE_EXHAUSTED"]):
-                print(f"⚠️ Chave {_current_key_index + 1} esgotada")
-                if tentativa < len(API_KEYS) - 1:
-                    _trocar_chave()
-                    continue
-            break
-    
-    return _resposta_fallback(mensagem)
-
-def _precisa_reforco(resposta: str, mensagem: str) -> bool:
-    limpa = (resposta or "").strip()
-    if not limpa:
-        return True
-    frases = [f for f in re.split(r"[.!?]+", limpa) if f.strip()]
-    if len(limpa) < 40 or len(frases) < 2:
-        return True
-    msg_lower = (mensagem or "").lower()
-    if any(k in msg_lower for k in ["onde", "explique", "explica", "detalhe", "detalhar", "me diga"]):
-        if len(limpa) < 80 or len(frases) < 2:
-            return True
-    return False
-
-
-
-
-
-
-def _normalizar_resposta(resposta: str, modo: str) -> str:
-    limpa = resposta.strip()
-    if not limpa:
-        return limpa
-
-    # Evita misturar ingles no modo VTuber
-    if modo == "vtuber" and any(tok in limpa for tok in ["Drawing on", "sarcastic", "helpful persona"]):
-        limpa = limpa.replace("Drawing on my sarcastic but helpful persona.", "Ok, sem modo tutorial. Vamos direto ao ponto.")
-
-    # Evita terminar com frase cortada
-    if not limpa.endswith((".", "!", "?")):
-        limpa += "."
-    return limpa
-
-def _ajustar_resposta_vtuber(resposta: str) -> str:
-    limpa = resposta.strip()
-    if not limpa:
-        return limpa
-
-    frases = [f for f in re.split(r"[.!?]+", limpa) if f.strip()]
-    if len(limpa) < 60 or len(frases) < 2:
-        if "?" in limpa:
-            return limpa
-        from random import choice
-        complementos = [
-            " Vai ficar nisso ou vai me dar o contexto?",
-            " Qual e a sua nessa historia?",
-            " Agora fala o resto, sem suspense.",
-        ]
-        if limpa.endswith((".", "!", "?")):
-            base = limpa
-        else:
-            base = limpa + "."
-        return base + choice(complementos)
-    return limpa
-
-def _ajustar_resposta_assistente(resposta: str, mensagem: str) -> str:
-    limpa = resposta.strip()
-    if not limpa:
-        return limpa
-
-    frases = [f for f in re.split(r"[.!?]+", limpa) if f.strip()]
-    if len(limpa) < 40 or len(frases) < 2:
-        if "?" in limpa:
-            return limpa
-        from random import choice
-        msg_lower = (mensagem or "").lower()
-        saudacao = any(s in msg_lower for s in ["oi", "olá", "ola", "tudo bem", "como vai", "como você", "como voce"])
-        if saudacao:
-            complementos = [
-                " Estou bem e pronta para ajudar. E você, como está?",
-                " Estou por aqui e funcionando direitinho. Quer ajuda com algo?",
-                " Estou bem, obrigada por perguntar. O que você precisa hoje?",
-            ]
-        else:
-            complementos = [
-                " Quer que eu detalhe um pouco mais?",
-                " Quer que eu sugira algumas opções?",
-                " Posso explicar melhor se você quiser.",
-            ]
-        base = limpa if limpa.endswith((".", "!", "?")) else limpa + "."
-        return base + choice(complementos)
-    return limpa
-
-def _resposta_fallback(mensagem: str) -> str:
-    """Respostas pré-definidas quando Gemini não está disponível"""
-    
-    msg_lower = mensagem.lower()
-    
-    # Saudações
-    if any(s in msg_lower for s in ["oi", "olá", "hey", "e aí"]):
-        from random import choice
-        return choice([
-            "Oi! Como posso te ajudar? 😊",
-            "E aí! Pronta para o que você precisar!",
-            "Olá! No que posso ser útil hoje?",
-        ])
-    
-    # Bom dia/tarde/noite
-    if "bom dia" in msg_lower:
-        return "Bom dia! Espero que você tenha um ótimo dia! ☀️"
-    if "boa tarde" in msg_lower:
-        return "Boa tarde! Como vão as coisas por aí?"
-    if "boa noite" in msg_lower:
-        return "Boa noite! Precisa de algo antes de descansar?"
-    
-    # Como vai/tudo bem
-    if any(p in msg_lower for p in ["como vai", "tudo bem", "como está"]):
-        from random import choice
-        return choice([
-            "Tudo ótimo por aqui! E com você?",
-            "Indo bem! Pronta para te ajudar. E você?",
-            "Tudo certo! O que você precisa hoje?",
-        ])
-    
-    # Despedidas
-    if any(d in msg_lower for d in ["tchau", "até logo", "falou", "até mais"]):
-        from random import choice
-        return choice([
-            "Até logo! Qualquer coisa é só chamar! 👋",
-            "Falou! Até a próxima!",
-            "Tchau! Foi bom conversar com você!",
-        ])
-    
-    # Agradecimentos
-    if any(a in msg_lower for a in ["obrigado", "obrigada", "valeu", "brigado"]):
-        from random import choice
-        return choice([
-            "Por nada! Estou aqui para isso! 😊",
-            "Sempre às ordens!",
-            "De nada! Fico feliz em ajudar!",
-        ])
-    
-    # Elogios
-    if any(e in msg_lower for e in ["legal", "incrível", "massa", "top", "demais"]):
-        from random import choice
-        return choice([
-            "Obrigada! Você também é demais! 😄",
-            "Que bom que você gosta! Sempre me esforço!",
-            "Valeu! Faço o meu melhor sempre!",
-        ])
-    
-    # Piadas
-    if any(p in msg_lower for p in ["piada", "graça", "engraçado"]):
-        from random import choice
-        return choice([
-            "Por que o computador foi ao médico? Porque tinha um vírus! 😄",
-            "Qual é o navegador favorito da galinha? O Firefox! 🦊",
-            "Como se chama um cachorro mágico? Labracadabrador! 🐕✨",
-        ])
-    
-    # Padrão
-    from random import choice
-    return choice([
-        "Interessante! Me conta mais sobre isso.",
-        "Hmm, entendi. O que você gostaria de fazer?",
-        "Legal! Precisa de ajuda com algo específico?",
-    ])
-
-
-def limpar_historico():
-    """Limpa o histórico de conversa"""
-    global historico_conversa
-    historico_conversa = []
+    print(f"{SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
 
 
 def executar(comando: str) -> str:
-    """
-    Função principal da skill de conversa
-    
-    Args:
-        comando: Mensagem do usuário
-    
-    Returns:
-        Resposta da Luna
-    """
-    
-    cmd_lower = comando.lower().strip()
+    msg = (comando or "").strip()
+    if not msg:
+        return "Diz ai."
 
-    if cmd_lower.startswith("lembre que "):
-        texto = comando[10:].strip()
+    memoria = _tratar_memoria(msg)
+    if memoria:
+        return memoria
+
+    return _conversar(msg)
+
+
+def _tratar_memoria(msg: str) -> Optional[str]:
+    msg_lower = msg.lower().strip()
+
+    if msg_lower.startswith("lembre que ") or msg_lower.startswith("lembra que "):
+        texto = msg[10:].strip()
         if memory.adicionar_memoria(texto):
             return "Ok, vou lembrar disso."
         return "Nao consegui salvar essa memoria."
 
-    if cmd_lower.startswith("lembra que "):
-        texto = comando[10:].strip()
-        if memory.adicionar_memoria(texto):
-            return "Ok, vou lembrar disso."
-        return "Nao consegui salvar essa memoria."
-
-    if any(k in cmd_lower for k in ["o que voce lembra", "quais memorias", "minhas memorias"]):
+    if any(p in msg_lower for p in ["o que voce lembra", "quais memorias", "minhas memorias"]):
         itens = memory.listar_memorias(5)
         if not itens:
             return "Ainda nao tenho memorias salvas."
         lista = "; ".join([i.get("texto", "") for i in itens if i.get("texto")])
         return f"Eu lembro disso: {lista}"
 
-    # Se for comando de menu, não usa Gemini
-    if any(m in comando.lower() for m in ["menu", "abrir menu", "atalho"]):
-        return _resposta_fallback(comando)
-    
-    # Tenta usar Gemini para resposta inteligente
-    return _conversar_com_gemini(comando)
+    return None
 
 
-# ========================================
-# COMANDOS ESPECIAIS
-# ========================================
+def _conversar(msg: str) -> str:
+    if not API_KEYS:
+        return "GEMINI_API_KEY nao configurada."
 
-def resetar_conversa():
-    """Reseta a memória da conversa"""
-    limpar_historico()
-    return "Ok, memória de conversa resetada! Vamos começar do zero."
+    contents = [_montar_mensagem(msg)]
+    system_instruction = _montar_prompt_personalidade(msg)
+    temperature = _temperatura_modo()
+    max_tokens = _max_tokens_modo()
 
-
-# ========================================
-# TESTES
-# ========================================
-
-if __name__ == "__main__":
-    print("🧪 TESTANDO SKILL DE CONVERSA DA LUNA\n")
-    print("Digite 'sair' para encerrar\n")
-    print("-" * 60)
-    
-    while True:
-        msg = input("\nVocê: ").strip()
-        
-        if msg.lower() in ['sair', 'exit', 'quit']:
-            print("\nLuna: " + executar("tchau"))
+    for tentativa in range(len(API_KEYS)):
+        try:
+            client = _obter_cliente()
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                    system_instruction=system_instruction,
+                ),
+            )
+            texto = _extract_text(response)
+            resposta = _normalizar_resposta(texto)
+            if _precisa_reforco(resposta, msg):
+                reforco = (
+                    "INSTRUCAO CRITICA: responda com mais detalhes, "
+                    "3 a 5 frases completas, especifico e direto."
+                )
+                resposta = _tentar_reforco(
+                    msg,
+                    system_instruction + "\n\n" + reforco,
+                    temperature,
+                    max_tokens,
+                )
+            return _normalizar_resposta(resposta)
+        except Exception as exc:
+            if _pode_trocar_chave(exc) and tentativa < len(API_KEYS) - 1:
+                _trocar_chave()
+                continue
             break
-        
-        if not msg:
-            continue
-        
-        resposta = executar(msg)
-        print(f"\nLuna: {resposta}")
+
+    return "Nao consegui falar com o Gemini agora."
+
+
+def _montar_mensagem(msg: str) -> str:
+    partes = []
+    contexto = _montar_contexto_curto()
+    ultimas_secao = _montar_ultima_resposta() if _pede_expansao(msg) else None
+    visao_secao = _montar_ultima_visao()
+    prompt_order = _obter_prompt_order()
+
+    if prompt_order == "inject_then_trim":
+        secao_contexto = PromptSection(contexto or "", priority=10, label="contexto")
+        secao_visao = PromptSection(visao_secao or "", priority=30, label="visao")
+        secao_ultima = PromptSection(ultimas_secao or "", priority=20, label="ultima")
+    else:
+        secao_contexto = PromptSection(contexto or "", priority=30, label="contexto")
+        secao_visao = PromptSection(visao_secao or "", priority=20, label="visao")
+        secao_ultima = PromptSection(ultimas_secao or "", priority=10, label="ultima")
+
+    bloco_contexto = build_prompt("", [secao_contexto, secao_visao, secao_ultima])
+    if bloco_contexto:
+        partes.append(bloco_contexto)
+
+    if _pede_expansao(msg) and not ultimas_secao:
+        ultima_resposta = STATE.obter_ultima_resposta()
+        if ultima_resposta:
+            partes.append(f"Ultima resposta:\n{ultima_resposta}")
+
+    partes.append(f"Usuario:\n{msg}")
+    return "\n\n".join(partes)
+
+
+def _montar_prompt_personalidade(msg: str) -> str:
+    modo = STATE.get_modo_ativacao()
+    base = _carregar_system_prompt()
+
+    secoes = [PromptSection(base, priority=100, label="base")]
+    if modo == "vtuber":
+        secoes.append(
+            PromptSection(
+                "Fale como se estivesse ao vivo, com personalidade e leve ironia, "
+                "sem perder a clareza.",
+                priority=90,
+                label="modo",
+            )
+        )
+
+    instrucoes_extras = []
+    msg_lower = msg.lower()
+    tem_visao = bool(STATE.get_ultima_visao())
+
+    if _pede_expansao(msg):
+        instrucoes_extras.append(
+            "O usuario pediu para expandir a resposta. "
+            "Reescreva com mais detalhes e sem repetir exatamente."
+        )
+
+    if _pede_opiniao(msg_lower):
+        if tem_visao:
+            instrucoes_extras.append(
+                "O usuario pediu sua opiniao sobre a ultima imagem/visao. "
+                "Responda com 3 a 4 frases, com detalhes do que viu."
+            )
+        else:
+            instrucoes_extras.append(
+                "O usuario pediu sua opiniao. Responda com 3 a 4 frases e justificativa."
+            )
+
+    if _pede_descricao(msg_lower) and tem_visao:
+        instrucoes_extras.append(
+            "O usuario pediu descricao/detalhes da ultima imagem. "
+            "Descreva elementos, cores e detalhes visiveis em 4 a 6 frases."
+        )
+
+    if instrucoes_extras:
+        secoes.append(
+            PromptSection(
+                "\n".join(instrucoes_extras),
+                priority=80,
+                label="extras",
+            )
+        )
+
+    return build_prompt("", secoes)
+
+
+def _obter_prompt_order() -> str:
+    valor = os.getenv("LUNA_PROMPT_ORDER", "inject_then_trim").strip().lower()
+    if valor not in {"inject_then_trim", "trim_then_inject"}:
+        return "inject_then_trim"
+    return valor
+
+
+def _obter_mem_length() -> int:
+    bruto = os.getenv("LUNA_MEM_LENGTH", "2")
+    try:
+        valor = int(bruto)
+        return max(1, valor)
+    except ValueError:
+        return 2
+
+
+def _obter_system_prompt_path() -> str:
+    path = os.getenv("LUNA_SYSTEM_PROMPT_PATH", _DEFAULT_SYSTEM_PROMPT_PATH)
+    return path
+
+
+def _obter_system_yaml_path() -> str:
+    path = os.getenv("LUNA_SYSTEM_YAML_PATH", _DEFAULT_SYSTEM_YAML_PATH)
+    return path
+
+
+def _carregar_system_prompt_yaml() -> str | None:
+    path = _obter_system_yaml_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        presets = data.get("presets", {})
+        default = presets.get("default", {})
+        texto = (default.get("system_prompt") or "").strip()
+        return texto or None
+    except Exception:
+        return None
+
+
+def _carregar_system_prompt() -> str:
+    texto_yaml = _carregar_system_prompt_yaml()
+    if texto_yaml:
+        return texto_yaml
+    path = _obter_system_prompt_path()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            texto = f.read().strip()
+        if texto:
+            return texto
+    except Exception:
+        pass
+    return (
+        "Voce e a Luna, assistente virtual brasileira. "
+        "Responda em portugues brasileiro, com tom natural e direto. "
+        "Use 2 a 4 frases completas, sem listas, sem asteriscos ou hashtags. "
+        "Seja especifica e evite respostas genericas. "
+        "Finalize com pontuacao completa e sem perguntas vazias."
+    )
+
+
+def _montar_contexto_curto() -> Optional[str]:
+    historico = STATE.historico or []
+    if not historico:
+        return "Contexto curto:\nPrimeira interacao"
+
+    mem_length = _obter_mem_length()
+    ultimas = historico[-mem_length:]
+    linhas = []
+    for item in ultimas:
+        comando = item.get("comando", "")
+        resposta = item.get("resposta", "")
+        linhas.append(f"U: {comando}\nL: {resposta[:50]}...")
+    return "Contexto curto:\n" + "\n\n".join(linhas)
+
+
+def _montar_ultima_visao() -> Optional[str]:
+    ultima_visao = STATE.get_ultima_visao()
+    if ultima_visao:
+        return f"Ultima visao:\n{ultima_visao}"
+    return None
+
+
+def _montar_ultima_resposta() -> Optional[str]:
+    ultima_resposta = STATE.obter_ultima_resposta()
+    if ultima_resposta:
+        return f"Ultima resposta:\n{ultima_resposta}"
+    return None
+
+
+def _temperatura_modo() -> float:
+    return 0.9 if STATE.get_modo_ativacao() == "vtuber" else 0.7
+
+
+def _max_tokens_modo() -> int:
+    return 500
+
+
+def _obter_cliente():
+    return genai.Client(api_key=API_KEYS[_current_key_index])
+
+
+def _trocar_chave():
+    global _current_key_index
+    _current_key_index = (_current_key_index + 1) % len(API_KEYS)
+
+
+def _pode_trocar_chave(exc: Exception) -> bool:
+    texto = str(exc)
+    return any(x in texto for x in ["429", "quota", "RESOURCE_EXHAUSTED", "rate limit"])
+
+
+def _extract_text(response) -> str:
+    text = getattr(response, "text", None)
+    if text:
+        return text
+    candidates = getattr(response, "candidates", None) or []
+    for cand in candidates:
+        content = getattr(cand, "content", None)
+        parts = getattr(content, "parts", None) or []
+        chunks = []
+        for part in parts:
+            part_text = getattr(part, "text", None)
+            if part_text:
+                chunks.append(part_text)
+        if chunks:
+            return "\n".join(chunks)
+    return ""
+
+
+def _tentar_reforco(
+    msg: str,
+    system_instruction: str,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    try:
+        client = _obter_cliente()
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[_montar_mensagem(msg)],
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                system_instruction=system_instruction,
+            ),
+        )
+        return _extract_text(response)
+    except Exception:
+        return ""
+
+
+def _pede_opiniao(msg_lower: str) -> bool:
+    termos = [
+        "o que voce acha",
+        "o que acha",
+        "sua opiniao",
+        "o que voce achou",
+        "acha da",
+        "acha do",
+    ]
+    return any(t in msg_lower for t in termos)
+
+
+def _pede_descricao(msg_lower: str) -> bool:
+    termos = [
+        "descreva",
+        "descricao",
+        "caracteristicas",
+        "detalhes",
+        "o que voce ve",
+        "o que tem",
+        "roupa",
+        "vestindo",
+    ]
+    return any(t in msg_lower for t in termos)
+
+
+def _pede_expansao(msg: str) -> bool:
+    msg_lower = msg.lower()
+    termos = [
+        "resposta mais",
+        "mais detalhes",
+        "mais completo",
+        "aprofundar",
+        "detalhe mais",
+        "explique melhor",
+    ]
+    return any(t in msg_lower for t in termos)
+
+
+def _precisa_reforco(resposta: str, msg: str) -> bool:
+    limpa = (resposta or "").strip()
+    if not limpa:
+        return True
+    if len(limpa) < 60:
+        return True
+    palavras_finais = limpa.split()
+    if palavras_finais:
+        ultima = palavras_finais[-1].rstrip(".!?").lower()
+        preposicoes_soltas = {
+            "a", "o", "as", "os", "de", "da", "do", "das", "dos",
+            "em", "no", "na", "nos", "nas", "com", "por", "para",
+        }
+        if ultima in preposicoes_soltas:
+            return True
+    frases = [f for f in limpa.replace("!", ".").replace("?", ".").split(".") if f.strip()]
+    if len(frases) < 2:
+        return True
+    if limpa and not limpa.endswith((".", "!", "?")):
+        return True
+    if _pede_descricao(msg.lower()) and len(limpa) < 100:
+        return True
+    return False
+
+
+def _normalizar_resposta(texto: Optional[str]) -> str:
+    if not texto:
+        return "Nao consegui gerar uma resposta agora."
+    limpa = texto.strip()
+    if limpa and not limpa.endswith((".", "!", "?")):
+        limpa += "."
+    return limpa

@@ -11,6 +11,44 @@ def _normalizar_texto(texto: str) -> str:
         .decode("ascii")
     )
 
+def _eh_pergunta_visual(cmd_norm: str) -> bool:
+    interrogativos = [
+        "qual",
+        "o que",
+        "quem",
+        "como",
+        "qual e",
+        "qual o",
+    ]
+    visuais = [
+        "tela",
+        "imagem",
+        "foto",
+        "print",
+        "screenshot",
+        "na tela",
+        "na imagem",
+        "visual",
+        "visao",
+        "o que voce ve",
+        "o que tem",
+        "aparece",
+        "mostra",
+        "personagem",
+    ]
+    frases_jogo = [
+        "nome do jogo",
+        "nome desse jogo",
+        "nome deste jogo",
+        "qual e o jogo",
+        "qual o jogo",
+        "que jogo",
+        "nome do game",
+    ]
+    if any(p in cmd_norm for p in frases_jogo):
+        return True
+    return any(i in cmd_norm for i in interrogativos) and any(v in cmd_norm for v in visuais)
+
 
 def detectar_intencao(cmd: str) -> str:
     """Detecta intencao usando apenas keywords - sem API"""
@@ -32,9 +70,49 @@ def detectar_intencao(cmd: str) -> str:
             return "sequencia"
 
     # Visao
+    termos_foco = [
+        "roupa",
+        "traje",
+        "vestindo",
+        "look",
+        "outfit",
+        "vestimenta",
+        "estilo",
+        "mao",
+        "maos",
+        "na mao",
+        "na maos",
+        "rosto",
+        "cabelo",
+        "olhos",
+        "expressao",
+        "gesto",
+        "gestos",
+        "segura",
+        "segurando",
+        "segurar",
+        "objeto",
+        "objetos",
+        "acessorio",
+        "acessorios",
+        "chapeu",
+        "chapeus",
+        "comida",
+        "prato",
+        "bebida",
+        "placa",
+        "texto",
+    ]
+    if any(t in cmd_norm for t in termos_foco):
+        return "vision"
+    if any(v in cmd_norm for v in ["reanalisar", "reanalise", "analise novamente", "analise de novo", "ultima captura", "ultima imagem", "ultimas imagens"]):
+        return "vision"
     if any(v in cmd_norm for v in ["analise", "analisar", "veja", "olhe", "ve", "tela", "screenshot"]):
-        if any(t in cmd_norm for t in ["tela", "imagem", "foto", "isso"]):
+        if any(t in cmd_norm for t in ["tela", "imagem", "foto", "isso", "captura", "print"]):
             return "vision"
+
+    if _eh_pergunta_visual(cmd_norm):
+        return "vision"
 
     # Preco
     if any(p in cmd_norm for p in ["preco", "valor", "cotacao", "bitcoin", "dolar", "real", "crypto"]):

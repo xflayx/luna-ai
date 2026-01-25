@@ -17,6 +17,9 @@ class StateManager:
         self.ultima_skill_usada = None
         self.ultima_visao = None
         self.ultima_visao_ts = None
+        self.ultima_captura_path = None
+        self.ultima_captura_ts = None
+        self.ultima_captura_hash = None
 
         # Ativacao
         self.modo_ativacao = "assistente"
@@ -61,6 +64,16 @@ class StateManager:
         if not self.ultima_visao:
             return None
         return self.ultima_visao
+
+    def set_ultima_captura(self, path: str, file_hash: str | None = None):
+        self.ultima_captura_path = path
+        self.ultima_captura_hash = file_hash
+        self.ultima_captura_ts = datetime.now().isoformat()
+
+    def get_ultima_captura(self) -> str | None:
+        if not self.ultima_captura_path:
+            return None
+        return self.ultima_captura_path
 
     def set_modo_ativacao(self, modo: str) -> bool:
         if modo not in ["assistente", "vtuber"]:

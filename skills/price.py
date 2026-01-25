@@ -75,6 +75,7 @@ def extrair_nome_cripto(frase: str) -> str | None:
     frase = frase.lower().replace("luna", "").strip()
     texto = unicodedata.normalize("NFD", frase)
     texto = texto.encode("ascii", "ignore").decode("utf-8")
+    texto = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in texto)
     
     remover = [
         "preco", "preço", "valor", "cotacao", "cotação",

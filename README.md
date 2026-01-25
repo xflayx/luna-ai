@@ -5,6 +5,7 @@ Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa mode
 ## O que ela faz
 - Conversa com memoria curta e respostas naturais
 - Luna Vision: analise da tela por screenshot
+- Reanalise da ultima captura sem nova captura de tela
 - Web Reader: resumo de pagina atual e posts do X/Twitter
 - YouTube Summary: resumo via transcricao
 - Noticias: busca e resumo via SerpAPI

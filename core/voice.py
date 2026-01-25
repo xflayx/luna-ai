@@ -1,4 +1,5 @@
 import atexit
+import audioop
 import os
 import queue
 import subprocess
@@ -6,6 +7,7 @@ import tempfile
 import threading
 import time
 import winsound
+import logging
 
 import speech_recognition as sr
 import pyttsx3
@@ -14,6 +16,10 @@ import requests
 from config.env import init_env
 
 init_env()
+
+# Silencia logs verbosos do httpx/httpcore (usado pelo SDK da Groq).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Configuracoes do reconhecedor
 rec = sr.Recognizer()
@@ -29,6 +35,12 @@ _TTS_DEBUG_TIMER = os.getenv("LUNA_TTS_DEBUG_TIMER") == "1"
 _MURF_VOICE = os.getenv("LUNA_MURF_VOICE", "pt-BR-isadora")
 _MURF_API_KEY = os.getenv("MURF_API_KEY", "")
 _FFPLAY_PATH = os.getenv("LUNA_FFPLAY_PATH", "")
+_STT_ENGINE = os.getenv("LUNA_STT_ENGINE", "groq").lower()
+_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+_GROQ_STT_MODEL = os.getenv("LUNA_GROQ_STT_MODEL", "whisper-large-v3")
+_STT_MIN_RMS = int(os.getenv("LUNA_STT_MIN_RMS", "200"))
+_STT_MIN_DURATION_SEC = float(os.getenv("LUNA_STT_MIN_DURATION_SEC", "0.9"))
+_STT_RMS_FACTOR = float(os.getenv("LUNA_STT_RMS_FACTOR", "2.3"))
 
 
 
@@ -251,12 +263,65 @@ def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
     return time.perf_counter()
 
 
+def _transcrever_groq(audio: sr.AudioData) -> str:
+    if not _GROQ_API_KEY:
+        return ""
+    try:
+        from groq import Groq
+    except Exception as e:
+        print(f"ERRO STT: groq sdk nao encontrado ({e})")
+        return ""
+    raw = audio.get_raw_data()
+    try:
+        rms = audioop.rms(raw, audio.sample_width)
+    except Exception:
+        rms = 0
+    dur = 0.0
+    try:
+        dur = len(raw) / float(audio.sample_rate * audio.sample_width)
+    except Exception:
+        dur = 0.0
+    dyn_rms_min = max(_STT_MIN_RMS, int(rec.energy_threshold * _STT_RMS_FACTOR))
+    if rms < dyn_rms_min or dur < _STT_MIN_DURATION_SEC:
+        return ""
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp.write(audio.get_wav_data())
+        path = tmp.name
+    try:
+        client = Groq(api_key=_GROQ_API_KEY)
+        with open(path, "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                file=(path, f.read()),
+                model=_GROQ_STT_MODEL,
+                temperature=0,
+                response_format="verbose_json",
+                language="pt",
+            )
+        return getattr(transcription, "text", "") or ""
+    except Exception as e:
+        print(f"ERRO STT GROQ: {e}")
+        return ""
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
 def ouvir():
     with mic as source:
         rec.adjust_for_ambient_noise(source, duration=0.5)
         try:
             audio = rec.listen(source, timeout=5, phrase_time_limit=15)
-            texto = rec.recognize_google(audio, language="pt-BR").lower()
+            texto = ""
+            if _STT_ENGINE == "groq":
+                texto = _transcrever_groq(audio)
+                if not texto:
+                    texto = rec.recognize_google(audio, language="pt-BR")
+            else:
+                texto = rec.recognize_google(audio, language="pt-BR")
+            texto = (texto or "").lower()
             print(f"[OUVIDO]: {texto}")
             return texto
         except sr.UnknownValueError:

@@ -12,6 +12,7 @@ pyaudio==0.2.14
 
 # --- LLM / AI ---
 google-genai==0.8.3
+groq
 
 # --- INTERFACE / GUI ---
 eel==0.16.0
@@ -32,6 +33,13 @@ Pillow==10.4.0
 
 # --- SISTEMA ---
 psutil==6.1.0
+
+# --- TESTES ---
+pytest>=8.0.0
+pytest-mock>=3.12.0
+
+# --- YAML ---
+PyYAML>=6.0.0
 
 # --- DEPENDÊNCIAS IMPLÍCITAS (podem ser necessárias) ---
 # Estas são instaladas automaticamente, mas listadas para clareza

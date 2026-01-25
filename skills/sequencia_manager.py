@@ -138,7 +138,7 @@ def executar_com_loop(quantidade_texto):
                     pyautogui.click(acao["x"], acao["y"])
                 elif acao["tipo"] == "tecla":
                     pyautogui.press(acao["tecla"])
-                time.sleep(1.5)       
+                time.sleep(0.5)       
         
         STATE.limpar_estados_sequencia()
         return f"Executei a sequência {nome} {vezes} vezes."

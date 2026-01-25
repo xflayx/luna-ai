@@ -1,20 +1,14 @@
-# Ambiente virtual (CRÍTICO)
-luna/
-venv/
-.venv/
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Arquivos grandes / compactados
-*.rar
-*.zip
-*.7z
-
-# Configurações sensíveis
+tests/
 .env
-config/settings.py
-
-# IDE
-.vscode/
+__pycache__/
+data/
+.context/
+*.log
+*.mp3
+*.wav
+*.png
+*.rar
+luna/
+luna/
+Lib/
+Scripts/

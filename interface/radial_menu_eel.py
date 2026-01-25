@@ -43,7 +43,7 @@ class RadialMenuEel:
     def execute_command(self, cmd):
         """Chamado pelo JavaScript quando clica em botão"""
         print(f"🎯 Comando: {cmd}")
-        pyperclip.copy(cmd)
+        pyperclip.copy(f"@menu:{cmd}")
         return True
     
     def close_menu(self):
