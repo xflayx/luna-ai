@@ -1,11 +1,12 @@
-﻿# LUNA - Assistente Virtual Inteligente
+# LUNA - Assistente Virtual Inteligente
 
-Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa modelos LLM (Gemini) para conversar, resumir conteudos e responder com personalidade.
+Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa LLMs
+(Gemini/Groq) para conversar, resumir conteudos e responder com personalidade.
 
-## O que ela faz
-- Conversa com memoria curta e respostas naturais
-- Luna Vision: analise da tela por screenshot
-- Reanalise da ultima captura sem nova captura de tela
+## Principais recursos
+- Conversa com memoria curta
+- Luna Vision: analise da tela via screenshot
+- Reanalise da ultima captura (sem nova captura)
 - Web Reader: resumo de pagina atual e posts do X/Twitter
 - YouTube Summary: resumo via transcricao
 - Noticias: busca e resumo via SerpAPI
@@ -15,6 +16,21 @@ Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa mode
 - Atalhos radial e guia de jogos baseado na tela
 - STT via Groq ASR com fallback para Google
 - System prompt via YAML com fallback para system_message.txt
+- Legendas no OBS via WebSocket v5
+- Painel realtime (Flask + Socket.IO)
+
+## Skills (habilidades)
+- conversa: chat principal com personalidade
+- vision: analise visual da tela (Gemini Vision)
+- web_reader: resumo de paginas e posts
+- youtube_summary: resumo por transcricao
+- news: noticias via SerpAPI
+- price: preco de cripto via CoinMarketCap
+- system_monitor: status do PC
+- sequencia_manager: macros/loops
+- atalhos_radial: menu radial/atalhos
+- game_guide: guia rapido baseado na tela
+- link_scraper: extracao de links em paginas
 
 ## Requisitos
 - Python 3.10+
@@ -42,7 +58,7 @@ GEMINI_API_KEY=...
 GEMINI_API_KEY_2=...
 GEMINI_API_KEY_3=...
 
-# resumo de YouTube
+# resumo de YouTube e STT Groq
 GROQ_API_KEY=...
 LUNA_GROQ_MODEL=llama-3.1-8b-instant
 LUNA_GROQ_STT_MODEL=whisper-large-v3
@@ -56,8 +72,23 @@ COINMARKETCAP_API_KEY=...
 
 # TTS externo (opcional)
 MURF_API_KEY=...
+LUNA_TTS_ENGINE=murf
+LUNA_MURF_VOICE=pt-BR-isadora
+LUNA_FFPLAY_PATH=...
 
-# OBS WebSocket (legendas)
+# memoria curta
+LUNA_MEM_LENGTH=2
+LUNA_SYSTEM_PROMPT_PATH=system_message.txt
+LUNA_SYSTEM_YAML_PATH=system_message.yaml
+LUNA_PROMPT_ORDER=inject_then_trim
+
+# painel realtime
+LUNA_PANEL_ENABLED=1
+LUNA_PANEL_HOST=127.0.0.1
+LUNA_PANEL_PORT=5055
+LUNA_PANEL_TOKEN=
+
+# OBS WebSocket (legendas) - v5
 LUNA_OBS_ENABLED=1
 LUNA_OBS_HOST=127.0.0.1
 LUNA_OBS_PORT=4455
@@ -80,12 +111,12 @@ Exemplos de comandos por voz:
 - "Luna, gravar sequencia" / "Luna, executar sequencia NOME"
 
 ## Estrutura do projeto
-- `core`: roteamento, intencoes e voz
+- `core`: roteamento, intencoes, voz e painel realtime
 - `skills`: habilidades (vision, web_reader, youtube_summary, etc)
 - `llm`: integracoes com LLM
 - `config`: estado e configuracoes
 - `data`: macros/seqs gravadas
-- `ui`: dashboard
+- `interface`: menu radial (eel)
 - `system_message.yaml`: prompt principal (fallback para `system_message.txt`)
 
 ## Testes
