@@ -113,6 +113,17 @@ def listar_memorias_curtas(limit=10):
     return items[-limit:]
 
 
+def contar_memoria_curta() -> int:
+    items = _load_store(SHORT_MEMORY_PATH).get("items", [])
+    return len(items)
+
+
+def limpar_memoria_curta() -> bool:
+    store = _empty_store()
+    _save_store(SHORT_MEMORY_PATH, store)
+    return True
+
+
 def buscar_memorias(consulta, limit=3):
     _ensure_long_memory_initialized()
     items = _load_store(LONG_MEMORY_PATH).get("items", [])

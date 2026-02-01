@@ -93,7 +93,12 @@ def _is_quota_error(erro_str: str) -> bool:
         "429", "quota", "RESOURCE_EXHAUSTED", "rate limit"
     ])
 
-def analisar_imagem_llm(image_path: str, prompt: str, tentativas_max: int = None) -> str:
+def analisar_imagem_llm(
+    image_path: str,
+    prompt: str,
+    tentativas_max: int = None,
+    max_output_tokens: int = 1024,
+) -> str:
     """
     Analisa imagem com fallback automático de API keys e retry inteligente
     
@@ -121,7 +126,7 @@ def analisar_imagem_llm(image_path: str, prompt: str, tentativas_max: int = None
                         contents=[prompt, image],
                         config=types.GenerateContentConfig(
                             temperature=0.3,
-                            max_output_tokens=1024,
+                            max_output_tokens=max_output_tokens,
                         )
                     )
     

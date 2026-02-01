@@ -1,4 +1,4 @@
-# ============================================
+﻿# ============================================
 # LUNA AI - REQUIREMENTS.TXT
 # ============================================
 
@@ -11,14 +11,14 @@ pyttsx3==2.90
 pyaudio==0.2.14
 
 # --- LLM / AI ---
-google-genai==0.8.3
+google-genai==0.8.0
 # Groq SDK (STT/ASR)
 groq
 
 # --- INTERFACE / GUI ---
 eel==0.16.0
 
-# --- AUTOMAÇÃO ---
+# --- AUTOMAÃ‡ÃƒO ---
 pyautogui==0.9.54
 pynput==1.7.7
 pyperclip==1.9.0
@@ -35,6 +35,9 @@ Pillow==10.4.0
 # --- SISTEMA ---
 psutil==6.1.0
 
+# --- VAD (VOICE ACTIVITY DETECTION) ---
+webrtcvad==2.0.10
+
 # --- TESTES ---
 pytest>=8.0.0
 pytest-mock>=3.12.0
@@ -42,25 +45,33 @@ pytest-mock>=3.12.0
 # --- YAML ---
 PyYAML>=6.0.0
 
-# --- DEPENDÊNCIAS IMPLÍCITAS (podem ser necessárias) ---
-# Estas são instaladas automaticamente, mas listadas para clareza
+# --- PAINEL REALTIME ---
+Flask==3.0.3
+Flask-SocketIO==5.3.6
+
+# --- OBS WebSocket (v5) ---
+obsws-python==1.1.1
+
+# --- DEPENDÃŠNCIAS IMPLÃCITAS (podem ser necessÃ¡rias) ---
+# Estas sÃ£o instaladas automaticamente, mas listadas para clareza
 certifi>=2024.0.0
 charset-normalizer>=3.0.0
 idna>=3.0
 urllib3>=2.0.0
 
 # ============================================
-# INSTALAÇÃO:
+# INSTALAÃ‡ÃƒO:
 # pip install -r requirements.txt
 # ============================================
 
 # NOTAS:
-# 1. pyaudio pode precisar de instalação manual no Windows:
+# 1. pyaudio pode precisar de instalaÃ§Ã£o manual no Windows:
 #    pip install pipwin
 #    pipwin install pyaudio
 #
-# 2. Playwright precisa de instalação dos browsers:
+# 2. Playwright precisa de instalaÃ§Ã£o dos browsers:
 #    playwright install chromium
 #
 # 3. Se usar conda/venv, ative o ambiente antes
 # ============================================
+

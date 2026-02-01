@@ -1,11 +1,13 @@
 # skills/web_reader.py
 import pyperclip
 import pyautogui
+import signal
 import time
 import os
 import tempfile
 from playwright.sync_api import sync_playwright
 from llm.vision_llm import analisar_imagem_llm
+from core.prompt_injector import build_web_reader_prompt
 from config.state import STATE
 
 # ========================================
@@ -48,29 +50,29 @@ def executar(cmd: str) -> str:
 
     contexto = STATE.obter_contexto_curto()
     
-    # Prompt específico por tipo - CURTO para evitar cortes
-    if "x.com" in url or "twitter.com" in url:
-        prompt = f"""Luna, VTuber. Contexto: {contexto}
-
-Leia o post do X/Twitter. Responda em NO MAXIMO 3 frases curtas:
-- Quem postou e o que disse
-- Se tiver imagem, descreva brevemente
-- Se aparecer tela de login: "O Elon trancou."
-
-Sem listas, sem *, sem #. Resposta COMPLETA em 3 frases."""
-    else:
-        prompt = f"""Luna, assistente. Contexto: {contexto}
-
-Resuma esta pagina em NO MAXIMO 4 frases curtas:
-- Tema principal
-- 2-3 pontos importantes
-- Ignore menus e anuncios
-
-Sem listas, sem *, sem #. Resposta COMPLETA em 4 frases."""
+    # Prompt especifico por tipo - curto para evitar cortes
+    is_twitter = "x.com" in url or "twitter.com" in url
+    prompt = build_web_reader_prompt(contexto, is_twitter)
 
     try:
-        resposta = analisar_imagem_llm(caminho_imagem, prompt)
-        return resposta.replace("*", "").replace("#", "")
+        resposta = analisar_imagem_llm(
+            caminho_imagem,
+            prompt,
+            max_output_tokens=2000,
+        )
+        texto = resposta.replace("*", "").replace("#", "")
+        if _precisa_reforco(texto, min_frases=3):
+            prompt_reforco = (
+                prompt
+                + "\n\nINSTRUCAO EXTRA: Entregue um resumo completo com 4 a 6 frases curtas."
+            )
+            resposta = analisar_imagem_llm(
+                caminho_imagem,
+                prompt_reforco,
+                max_output_tokens=2000,
+            )
+            texto = resposta.replace("*", "").replace("#", "")
+        return _limitar_resumo(texto, max_frases=6, max_palavras=140)
     finally:
         if os.path.exists(caminho_imagem):
             os.remove(caminho_imagem)
@@ -81,13 +83,58 @@ Sem listas, sem *, sem #. Resposta COMPLETA em 4 frases."""
 
 def capturar_url_atual():
     """Captura URL do navegador"""
-    pyautogui.hotkey('ctrl', 'l')
-    time.sleep(0.2)
-    pyautogui.hotkey('ctrl', 'c')
-    time.sleep(0.2)
-    pyautogui.click()
-    url = pyperclip.paste().strip()
-    return url if url.startswith("http") else None
+    old_handler = None
+    try:
+        old_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except Exception:
+        old_handler = None
+
+    try:
+        pyautogui.hotkey('ctrl', 'l')
+        time.sleep(0.2)
+        pyautogui.hotkey('ctrl', 'c')
+        time.sleep(0.2)
+        pyautogui.click()
+        url = pyperclip.paste().strip()
+        return url if url.startswith("http") else None
+    finally:
+        if old_handler is not None:
+            try:
+                signal.signal(signal.SIGINT, old_handler)
+            except Exception:
+                pass
+
+def _limitar_resumo(texto: str, max_frases: int, max_palavras: int) -> str:
+    texto = (texto or "").strip()
+    if not texto:
+        return texto
+    palavras = texto.split()
+    if len(palavras) > max_palavras:
+        texto = " ".join(palavras[:max_palavras]).rstrip()
+    frases = [
+        f.strip()
+        for f in texto.replace("!", ".").replace("?", ".").split(".")
+        if f.strip()
+    ]
+    if len(frases) > max_frases:
+        texto = ". ".join(frases[:max_frases]).strip()
+    if texto and not texto.endswith((".", "!", "?")):
+        texto += "."
+    return texto
+
+def _contar_frases(texto: str) -> int:
+    if not texto:
+        return 0
+    frases = [
+        f.strip()
+        for f in texto.replace("!", ".").replace("?", ".").split(".")
+        if f.strip()
+    ]
+    return len(frases)
+
+def _precisa_reforco(texto: str, min_frases: int) -> bool:
+    return _contar_frases(texto) < min_frases
 
 def capturar_site_inteiro_playwright(url):
     """Captura screenshot completo do site"""

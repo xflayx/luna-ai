@@ -1,6 +1,7 @@
 from core.voice import ouvir, falar
 from core.intent import detectar_intencao
 from core.router import processar_comando
+from core.realtime_panel import iniciar_painel, atualizar_estado
 from config.state import STATE
 from config.env import init_env
 import sys
@@ -10,6 +11,12 @@ import pyperclip
 import logging
 import os
 import time
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*ArbitraryTypeWarning: <built-in function any>.*",
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,10 +27,12 @@ logging.getLogger("comtypes").setLevel(logging.ERROR)
 logging.getLogger("comtypes.client._code_cache").setLevel(logging.ERROR)
 
 init_env()
+iniciar_painel()
 
 
 def status(msg):
     logger.info(msg)
+    atualizar_estado(status=msg)
 
 
 def encerrar(sig=None, frame=None):
@@ -115,6 +124,11 @@ try:
             status("✍️ Modo direto: capturando dados da sequencia...")
 
         resposta = processar_comando(cmd, intent)
+        atualizar_estado(
+            last_command=cmd,
+            last_intent=intent,
+            last_response=resposta or "",
+        )
 
         if resposta:
             status("🗣️ Falando...")

@@ -57,16 +57,19 @@ def detectar_intencao(cmd: str) -> str:
     cmd_norm = _normalizar_texto(cmd)
 
     # Estados de sequencia
-    if STATE.esperando_nome_sequencia or STATE.esperando_loops or STATE.gravando_sequencia:
+    if STATE.esperando_nome_sequencia or STATE.gravando_sequencia:
         return "sequencia"
+    if STATE.esperando_loops:
+        if any(n in cmd_norm for n in ["uma vez", "duas vezes", "tres vezes", "vezes"]):
+            return "sequencia"
+        if any(char.isdigit() for char in cmd):
+            return "sequencia"
 
     # Sequencias
     if any(p in cmd_norm for p in ["executar", "sequencia", "macro", "gravar", "parar", "grave", "rode"]):
         return "sequencia"
-    if any(n in cmd_norm for n in ["uma vez", "duas vezes", "tres vezes", "vezes"]):
-        return "sequencia"
     if any(char.isdigit() for char in cmd):
-        if not any(p in cmd_norm for p in ["preco", "valor", "cotacao", "bitcoin", "dolar"]):
+        if any(p in cmd_norm for p in ["sequencia", "macro", "executar", "rodar", "repetir", "loop"]):
             return "sequencia"
 
     # Visao
@@ -125,6 +128,10 @@ def detectar_intencao(cmd: str) -> str:
     # YouTube
     if any(y in cmd_norm for y in ["youtube", "youtu.be", "video"]):
         return "youtube_summary"
+
+    # Link Scraper
+    if any(l in cmd_norm for l in ["coletar links", "extrair links", "listar links", "salvar links", "mapear links", "raspar links"]):
+        return "link_scraper"
 
     # Web
     if any(w in cmd_norm for w in ["site", "pagina", "link", "url", "http", "leia", "resuma", "resumo", "post", "tweet", "x.com", "twitter.com"]):

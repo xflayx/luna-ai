@@ -14,6 +14,7 @@ import pyttsx3
 import requests
 
 from config.env import init_env
+from core.obs_client import update_text
 
 init_env()
 
@@ -40,7 +41,11 @@ _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 _GROQ_STT_MODEL = os.getenv("LUNA_GROQ_STT_MODEL", "whisper-large-v3")
 _STT_MIN_RMS = int(os.getenv("LUNA_STT_MIN_RMS", "200"))
 _STT_MIN_DURATION_SEC = float(os.getenv("LUNA_STT_MIN_DURATION_SEC", "0.9"))
-_STT_RMS_FACTOR = float(os.getenv("LUNA_STT_RMS_FACTOR", "2.3"))
+_STT_RMS_FACTOR = float(os.getenv("LUNA_STT_RMS_FACTOR", "2.5"))
+_VAD_ENABLED = os.getenv("LUNA_VAD_ENABLED", "1") == "1"
+_VAD_MODE = int(os.getenv("LUNA_VAD_MODE", "2"))
+_VAD_FRAME_MS = int(os.getenv("LUNA_VAD_FRAME_MS", "30"))
+_VAD_MIN_SPEECH_FRAMES = int(os.getenv("LUNA_VAD_MIN_SPEECH_FRAMES", "8"))
 
 
 
@@ -83,6 +88,10 @@ def falar(texto):
     texto_limpo = texto.replace("*", "").replace("#", "")
     print(f"\nLUNA: {texto}")
     start_ts = time.perf_counter()
+    try:
+        update_text(texto_limpo)
+    except Exception:
+        pass
 
     if _TTS_ASSINCRONO:
         _iniciar_fala_thread()
@@ -263,6 +272,41 @@ def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
     return time.perf_counter()
 
 
+def _vad_rejeitar_audio(audio: sr.AudioData) -> bool:
+    if not _VAD_ENABLED:
+        return False
+    try:
+        import webrtcvad
+    except Exception:
+        return False
+    try:
+        vad = webrtcvad.Vad(_VAD_MODE)
+    except Exception:
+        return False
+    raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+    if not raw:
+        return True
+    frame_ms = _VAD_FRAME_MS
+    if frame_ms not in (10, 20, 30):
+        frame_ms = 30
+    frame_size = int(16000 * frame_ms / 1000) * 2
+    if frame_size <= 0:
+        return False
+    total = 0
+    voiced = 0
+    for i in range(0, len(raw) - frame_size + 1, frame_size):
+        frame = raw[i:i + frame_size]
+        total += 1
+        try:
+            if vad.is_speech(frame, 16000):
+                voiced += 1
+        except Exception:
+            return False
+    if total == 0:
+        return True
+    return voiced < _VAD_MIN_SPEECH_FRAMES
+
+
 def _transcrever_groq(audio: sr.AudioData) -> str:
     if not _GROQ_API_KEY:
         return ""
@@ -316,10 +360,14 @@ def ouvir():
             audio = rec.listen(source, timeout=5, phrase_time_limit=15)
             texto = ""
             if _STT_ENGINE == "groq":
+                if _vad_rejeitar_audio(audio):
+                    return ""
                 texto = _transcrever_groq(audio)
                 if not texto:
                     texto = rec.recognize_google(audio, language="pt-BR")
             else:
+                if _vad_rejeitar_audio(audio):
+                    return ""
                 texto = rec.recognize_google(audio, language="pt-BR")
             texto = (texto or "").lower()
             print(f"[OUVIDO]: {texto}")

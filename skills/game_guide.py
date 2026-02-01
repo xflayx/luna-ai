@@ -1,6 +1,7 @@
 # skills/game_guide.py
 import urllib.parse
 from llm.vision_llm import analisar_imagem_llm
+from core.prompt_injector import build_game_guide_prompt
 from config.state import STATE
 import os
 import tempfile
@@ -48,20 +49,7 @@ def executar(comando: str) -> str:
 
     contexto = STATE.obter_contexto_curto()
     
-    prompt = f"""Você é a Luna, assistente gamer e VTuber.
-Contexto: {contexto}
-O usuário quer um guia para: '{busca}'
-
-INSTRUÇÕES:
-1. Analise a página de busca do Google
-2. Extraia as informações principais dos resultados visíveis
-3. Resuma o passo a passo de forma clara e direta
-4. Se houver vários métodos, cite o mais rápido
-5. Use tom sarcástico e confiante
-6. Responda em 3-5 frases úteis
-7. SEM usar *, -, # ou listas
-
-Responda como se estivesse explicando ao vivo."""
+    prompt = build_game_guide_prompt(contexto, busca)
 
     try:
         resposta = analisar_imagem_llm(caminho_imagem, prompt)

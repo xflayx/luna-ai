@@ -11,6 +11,11 @@ import unicodedata
 from PIL import ImageGrab
 
 from llm.vision_llm import analisar_imagem, gerar_opiniao
+from core.prompt_injector import (
+    build_vision_analysis_prompt,
+    build_vision_opinion_prompt,
+    build_vision_opinion_reforco,
+)
 from config.state import STATE
 from core import voice
 
@@ -158,37 +163,13 @@ def _analisar_imagem_e_reagir(image_path: str, cmd: str) -> str:
     detalhado = _pede_detalhe(cmd_lower)
     foco = _extrair_foco(cmd_lower)
 
-    prompt_analise = (
-        "Voce e a Luna, VTuber e assistente IA.\n"
-        f"Contexto: {contexto}\n"
-        f"Comando: '{cmd}'\n\n"
-        "Analise a imagem e responda:\n"
-        "- Descreva a cena com detalhes objetivos\n"
-        "- Interprete o contexto (o que parece estar acontecendo)\n"
-        "Use 1 a 2 frases completas, sem listas."
-    )
-
-    if foco:
-        prompt_analise += f"\n- Foque em {foco} e detalhes relacionados."
+    prompt_analise = build_vision_analysis_prompt(contexto, cmd, foco)
 
     analise = analisar_imagem(image_path, prompt_analise).strip()
     if analise:
         STATE.set_ultima_visao(analise)
 
-    prompt_opiniao = (
-        "Voce e a Luna, VTuber reagindo ao jogo.\n"
-        f"Pedido do usuario: '{cmd}'\n\n"
-        "ANALISE:\n"
-        f"{analise}\n\n"
-        "Regras:\n"
-        "- Reaja com opiniao natural e divertida (estilo streamer)\n"
-        "- Responda em 1 frase completa, no maximo 25 palavras\n"
-        "- Sem listas, sem asteriscos ou hashtags\n"
-        "- Texto pronto para TTS"
-    )
-
-    if foco:
-        prompt_opiniao += f"\n- Foque em {foco} e detalhes relacionados"
+    prompt_opiniao = build_vision_opinion_prompt(cmd, analise, foco)
 
     try:
         resposta = gerar_opiniao(prompt_opiniao).strip()
@@ -196,7 +177,7 @@ def _analisar_imagem_e_reagir(image_path: str, cmd: str) -> str:
         print(f"ERRO GEMINI OPINIAO: {e}")
         resposta = _gerar_opiniao_groq(prompt_opiniao).strip()
     if _precisa_reforco(resposta, detalhado):
-        reforco = "INSTRUCAO CRITICA: detalhe mais e evite respostas curtas."
+        reforco = build_vision_opinion_reforco()
         try:
             resposta = gerar_opiniao(prompt_opiniao + "\n\n" + reforco).strip()
         except Exception as e:

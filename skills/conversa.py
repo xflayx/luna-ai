@@ -5,6 +5,8 @@ from typing import Optional
 from google import genai
 from google.genai import types
 import yaml
+import pyperclip
+import unicodedata
 
 from config.env import init_env
 from config.state import STATE
@@ -49,6 +51,8 @@ def executar(comando: str) -> str:
     if not msg:
         return "Diz ai."
 
+    msg = _injetar_clipboard_se_necessario(msg)
+
     memoria = _tratar_memoria(msg)
     if memoria:
         return memoria
@@ -73,6 +77,39 @@ def _tratar_memoria(msg: str) -> Optional[str]:
         return f"Eu lembro disso: {lista}"
 
     return None
+
+
+def _injetar_clipboard_se_necessario(msg: str) -> str:
+    msg_lower = msg.lower().strip()
+    msg_norm = (
+        unicodedata.normalize("NFKD", msg_lower)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    msg_norm = msg_norm.replace("luna", "").strip()
+    gatilhos = [
+        "o que e isso",
+        "o que e isso?",
+        "o que significa isso",
+        "o que significa isso?",
+        "o que e isso ai",
+        "o que e isso ai?",
+        "me explica isso",
+        "me explica isso?",
+        "explica isso",
+        "explica isso?",
+    ]
+    if not any(g in msg_norm for g in gatilhos):
+        return msg
+    try:
+        texto = pyperclip.paste().strip()
+    except Exception:
+        return msg
+    if not texto:
+        return msg
+    if len(texto) > 1500:
+        texto = texto[:1500].rstrip()
+    return f"{msg}\n\nTexto selecionado:\n{texto}"
 
 
 def _conversar(msg: str) -> str:
@@ -406,6 +443,7 @@ def _precisa_reforco(resposta: str, msg: str) -> bool:
         preposicoes_soltas = {
             "a", "o", "as", "os", "de", "da", "do", "das", "dos",
             "em", "no", "na", "nos", "nas", "com", "por", "para",
+            "aquele", "aquela", "aquilo", "isso", "essa", "esse",
         }
         if ultima in preposicoes_soltas:
             return True

@@ -11,6 +11,12 @@ import requests
 
 from config.env import init_env
 from config.state import STATE
+from core.prompt_injector import (
+    build_youtube_summary_prompt,
+    build_youtube_summary_simple_prompt,
+    build_youtube_summary_merge_prompt,
+    build_youtube_summary_reforco,
+)
 
 init_env()
 
@@ -182,7 +188,7 @@ def _resumir_transcricao(transcricao: str, cmd: str, url: str) -> str:
         return "GROQ_API_KEY nao configurada."
 
     contexto = STATE.obter_contexto_curto()
-    prompt = _prompt_resumo_simples(transcricao, cmd, url)
+    prompt = build_youtube_summary_simple_prompt(transcricao, cmd, url)
 
     texto, erro = _groq_chat(prompt, max_tokens=420, temperature=0.6)
     if erro:
@@ -208,47 +214,16 @@ def _resumo_curto(texto: str) -> bool:
 
 
 def _repetir_resumo(prompt: str) -> str:
-    reforco = (
-        "\nINSTRUCAO EXTRA: Entregue um resumo completo com 6 a 10 frases. "
-        "Nao se apresente. Nao cumprimente.\n"
-    )
+    reforco = build_youtube_summary_reforco()
     texto, _ = _groq_chat(prompt + reforco, max_tokens=500, temperature=0.4)
     return texto
-
-
-def _prompt_resumo(texto: str, cmd: str, url: str, contexto: str) -> str:
-    return f"""Voce e a Luna, assistente IA brasileira.
-Contexto: {contexto}
-Link: {url}
-Pedido: {cmd}
-
-Tarefa: Resuma o conteudo do video usando a transcricao abaixo.
-Regras:
-1) 4 a 8 frases, texto corrido, sem listas
-2) Destaque o tema principal e pontos mais importantes
-3) Evite repetir a transcricao literalmente
-4) Nao se apresente e nao cumprimente
-5) Responda apenas com o resumo
-
-TRANSCRICAO:
-{texto}
-"""
-
-
-def _prompt_resumo_simples(texto: str, cmd: str, url: str) -> str:
-    return f"""Contexto: {cmd}
-Link: {url}
-
-Faca um resumo da transcricao. Responda apenas com o resumo:
-{texto}
-"""
 
 
 def _resumir_em_partes(transcricao: str, cmd: str, url: str, contexto: str) -> str:
     partes = _selecionar_partes(transcricao, 2000)
     resumos = []
     for parte in partes:
-        prompt = _prompt_resumo(parte, cmd, url, contexto)
+        prompt = build_youtube_summary_prompt(parte, cmd, url, contexto)
         resumo, _ = _groq_chat(prompt, max_tokens=240, temperature=0.6)
         if resumo:
             resumos.append(resumo)
@@ -256,19 +231,7 @@ def _resumir_em_partes(transcricao: str, cmd: str, url: str, contexto: str) -> s
     if not resumos:
         return "Nao consegui resumir esse video."
 
-    prompt_final = f"""Voce e a Luna, assistente IA brasileira.
-Contexto: {contexto}
-Link: {url}
-
-Tarefa: Unifique os resumos parciais abaixo em um unico resumo final.
-Regras:
-1) 6 a 10 frases, texto corrido, sem listas
-2) Sem apresentacao ou cumprimento
-3) Seja objetiva e completa
-
-RESUMOS PARCIAIS:
-{os.linesep.join(resumos)}
-"""
+    prompt_final = build_youtube_summary_merge_prompt(contexto, url, resumos)
     resumo_final, _ = _groq_chat(prompt_final, max_tokens=500, temperature=0.5)
     return resumo_final or "Nao consegui resumir esse video."
 

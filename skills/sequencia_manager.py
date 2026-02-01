@@ -29,6 +29,7 @@ MACROS_FILE = "data/macros.json"
 acoes_temporarias = []
 gravador_mouse = None
 gravador_teclado = None
+_ultimo_ts = None
 
 # --- CONTRATO DA SKILL ---
 # Usando o termo "sequencia" conforme sua preferência
@@ -86,17 +87,26 @@ def carregar_macros():
         return json.load(f)
 
 def iniciar_gravacao_sequencia():
-    global acoes_temporarias, gravador_mouse, gravador_teclado
+    global acoes_temporarias, gravador_mouse, gravador_teclado, _ultimo_ts
     acoes_temporarias = []
-    
+    _ultimo_ts = time.perf_counter()
+
+    def _registrar_acao(acao: dict):
+        global _ultimo_ts
+        agora = time.perf_counter()
+        delay = max(0.0, agora - _ultimo_ts) if _ultimo_ts else 0.0
+        _ultimo_ts = agora
+        acao["delay"] = round(delay, 3)
+        acoes_temporarias.append(acao)
+
     def on_click(x, y, button, pressed):
         if pressed and button == mouse.Button.left:
-            acoes_temporarias.append({"tipo": "mouse", "x": x, "y": y})
+            _registrar_acao({"tipo": "mouse", "x": x, "y": y})
             
     def on_press(key):
         try: tecla = key.char
         except: tecla = str(key).replace("Key.", "")
-        acoes_temporarias.append({"tipo": "tecla", "tecla": tecla})
+        _registrar_acao({"tipo": "tecla", "tecla": tecla})
 
     gravador_mouse = mouse.Listener(on_click=on_click); gravador_mouse.start()
     gravador_teclado = keyboard.Listener(on_press=on_press); gravador_teclado.start()
@@ -134,11 +144,11 @@ def executar_com_loop(quantidade_texto):
         logger.info(f"▶️ Executando {nome} por {vezes} vezes.")
         for i in range(vezes):
             for acao in macros[nome]:
+                time.sleep(acao.get("delay", 0.5))
                 if acao["tipo"] == "mouse":
                     pyautogui.click(acao["x"], acao["y"])
                 elif acao["tipo"] == "tecla":
                     pyautogui.press(acao["tecla"])
-                time.sleep(0.5)       
         
         STATE.limpar_estados_sequencia()
         return f"Executei a sequência {nome} {vezes} vezes."

@@ -1,4 +1,5 @@
 import psutil
+from core.prompt_injector import build_system_monitor_prompt
 from config.state import STATE
 
 # ========================================
@@ -34,10 +35,7 @@ def executar(comando: str) -> str:
     
     # Aqui nem precisamos de LLM se quiser economizar, podemos fazer frases prontas
     # Mas com LLM fica melhor:
-    prompt = (
-        f"A Luna está analisando o PC do usuário. CPU: {cpu}%, RAM: {ram}%.\n"
-        "Dê uma resposta curta e sarcástica sobre esses números."
-    )
+    prompt = build_system_monitor_prompt(cpu, ram, contexto)
     
     # Chama sua função de chat/llm padrão aqui
     # resposta = chamar_seu_llm(prompt)
