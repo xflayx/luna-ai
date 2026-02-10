@@ -1,74 +1,100 @@
 # skills/news.py
 import os
+import re
+import unicodedata
+
 import requests
 
-# ========================================
-# METADADOS DA SKILL (Padrão de Plugin)
-# ========================================
 
 SKILL_INFO = {
-    "nome": "Notícias",
-    "descricao": "Busca notícias usando SerpAPI",
-    "versao": "1.0.0",
+    "nome": "Noticias",
+    "descricao": "Busca noticias usando SerpAPI",
+    "versao": "1.1.0",
     "autor": "Luna Team",
-    "intents": ["noticias", "news"]
+    "intents": ["noticias", "news"],
 }
 
-# Gatilhos para esta skill
-GATILHOS = ["notícia", "noticia", "news", "jornal", "acontecendo"]
+GATILHOS = ["noticia", "noticias", "news", "jornal", "acontecendo"]
 
-# ========================================
-# INICIALIZAÇÃO
-# ========================================
 
 def inicializar():
-    """Chamada quando a skill é carregada"""
+    """Chamada quando a skill e carregada"""
     print(f"✅ {SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
 
-# ========================================
-# FUNÇÃO PRINCIPAL
-# ========================================
 
 def executar(comando: str) -> str:
-    """Busca notícias baseado no comando"""
-    
-    # Remove palavras de ativação
-    query = comando.replace("luna", "").replace("notícia", "").replace("sobre", "").strip()
-    
+    """Busca noticias baseado no comando"""
+    query = _extrair_query(comando)
     if not query:
-        return "Quer notícias sobre o quê?"
-    
+        return "Quer noticias sobre o que?"
     return buscar_noticias(query)
 
-# ========================================
-# FUNÇÕES AUXILIARES
-# ========================================
 
 def buscar_noticias(query: str) -> str:
-    """Busca notícias usando SerpAPI"""
-    
-    serpapi_api_key = os.getenv("SERPAPI_API_KEY", "")
+    """Busca noticias usando SerpAPI"""
+    serpapi_api_key = os.getenv("SERPAPI_API_KEY") or os.getenv("SERPAPI_KEY", "")
     if not serpapi_api_key:
-        return "SERPAPI_API_KEY não configurada."
+        return "SERPAPI_API_KEY nao configurada."
 
     params = {
         "engine": "google",
         "q": query,
         "hl": "pt-BR",
         "gl": "br",
-        "api_key": serpapi_api_key
+        "api_key": serpapi_api_key,
+        "tbm": "nws",
     }
 
     try:
         r = requests.get("https://serpapi.com/search", params=params, timeout=10)
+        r.raise_for_status()
         data = r.json()
 
         resultados = data.get("organic_results", [])[:3]
         if not resultados:
-            return "Não encontrei informações relevantes sobre isso."
+            return "Nao encontrei informacoes relevantes sobre isso."
 
-        titulos = " | ".join(r["title"] for r in resultados)
+        titulos = " | ".join(r.get("title", "").strip() for r in resultados if r.get("title"))
+        if not titulos:
+            return "Nao encontrei informacoes relevantes sobre isso."
         return f"Encontrei isso: {titulos}"
-        
     except Exception as e:
-        return f"Erro ao buscar notícias: {str(e)}"
+        return f"Erro ao buscar noticias: {e}"
+
+
+def _extrair_query(comando: str) -> str:
+    texto = (comando or "").strip()
+    if not texto:
+        return ""
+
+    texto = _normalizar(texto.lower())
+    tokens_remover = [
+        "luna",
+        "noticia",
+        "noticias",
+        "news",
+        "jornal",
+        "acontecendo",
+        "sobre",
+        "do",
+        "da",
+        "de",
+        "dos",
+        "das",
+        "no",
+        "na",
+        "nos",
+        "nas",
+    ]
+    pattern = r"\b(" + "|".join(re.escape(t) for t in tokens_remover) + r")\b"
+    texto = re.sub(pattern, " ", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    return texto
+
+
+def _normalizar(texto: str) -> str:
+    return (
+        unicodedata.normalize("NFKD", texto)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )

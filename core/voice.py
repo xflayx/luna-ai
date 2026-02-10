@@ -1,4 +1,5 @@
 import atexit
+import base64
 import audioop
 import os
 import queue
@@ -12,6 +13,12 @@ import logging
 import speech_recognition as sr
 import pyttsx3
 import requests
+try:
+    import sounddevice as sd
+    import soundfile as sf
+except Exception:
+    sd = None
+    sf = None
 
 from config.env import init_env
 from core.obs_client import update_text
@@ -35,7 +42,14 @@ _TTS_ENGINE = os.getenv("LUNA_TTS_ENGINE", "pyttsx3").lower()
 _TTS_DEBUG_TIMER = os.getenv("LUNA_TTS_DEBUG_TIMER") == "1"
 _MURF_VOICE = os.getenv("LUNA_MURF_VOICE", "pt-BR-isadora")
 _MURF_API_KEY = os.getenv("MURF_API_KEY", "")
+_MURF_FORMAT = os.getenv("MURF_FORMAT", "MP3").strip().upper()
+_MURF_STYLE = os.getenv("MURF_STYLE", "Conversational").strip()
+_MURF_LOCALE = os.getenv("MURF_LOCALE", "pt-BR").strip()
+_MURF_MODEL = os.getenv("MURF_MODEL", "").strip()
+_MURF_BASE_URL = os.getenv("MURF_BASE_URL", "https://api.murf.ai").rstrip("/")
+_MURF_STREAM_URL = os.getenv("MURF_STREAM_URL", "https://global.api.murf.ai/v1/speech/stream").rstrip("/")
 _FFPLAY_PATH = os.getenv("LUNA_FFPLAY_PATH", "")
+_AUDIO_DEVICE = os.getenv("LUNA_AUDIO_DEVICE", "").strip()
 _STT_ENGINE = os.getenv("LUNA_STT_ENGINE", "groq").lower()
 _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 _GROQ_STT_MODEL = os.getenv("LUNA_GROQ_STT_MODEL", "whisper-large-v3")
@@ -48,13 +62,32 @@ _VAD_FRAME_MS = int(os.getenv("LUNA_VAD_FRAME_MS", "30"))
 _VAD_MIN_SPEECH_FRAMES = int(os.getenv("LUNA_VAD_MIN_SPEECH_FRAMES", "8"))
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, default))
+    except Exception:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except Exception:
+        return default
+
+
+_MURF_RATE = _env_int("MURF_RATE", 15)
+_MURF_PITCH = _env_int("MURF_PITCH", 10)
+_MURF_SAMPLE_RATE = _env_int("MURF_SAMPLE_RATE", 24000)
+_MURF_CHANNEL_TYPE = os.getenv("MURF_CHANNEL_TYPE", "MONO").strip().upper()
+
+
 
 def _fala_worker():
     while True:
         item = _fala_queue.get()
         try:
             if item is None:
-                _fala_queue.task_done()
                 return
             texto, start_ts = item
             _speak(texto, start_ts)
@@ -156,25 +189,45 @@ def _speak_murf(texto: str, start_ts: float | None = None):
 
     print(f"[TTS MURF TEXTO]: {texto}")
 
+    fmt = (_MURF_FORMAT or "MP3").upper()
+
+    if fmt == "WAV":
+        path = None
+        try:
+            t0 = time.perf_counter()
+            resp = _murf_generate_audio(texto, fmt)
+            t_headers = time.perf_counter()
+            path = _murf_save_audio(resp, fmt)
+            _log_tts_duration("murf_resposta", t_headers - t0)
+            _log_tts_delay(start_ts, "inicio_fala_murf")
+            _tocar_audio_arquivo(path, fmt)
+        finally:
+            if path:
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+        return
+
     if not _tem_ffplay():
         raise RuntimeError("ffplay nao encontrado no PATH (instale ffmpeg)")
 
-    url = "https://global.api.murf.ai/v1/speech/stream"
+    url = _MURF_STREAM_URL or "https://global.api.murf.ai/v1/speech/stream"
     headers = {
         "api-key": _MURF_API_KEY,
         "Content-Type": "application/json",
     }
     data = {
         "voice_id": _MURF_VOICE,
-        "style": "Conversational",
+        "style": _MURF_STYLE or "Conversational",
         "text": texto,
-        "rate": 15,
-        "pitch": 10,
-        "multi_native_locale": "pt-BR",
-        "model": "FALCON",
+        "rate": _MURF_RATE,
+        "pitch": _MURF_PITCH,
+        "multi_native_locale": _MURF_LOCALE or "pt-BR",
+        "model": _MURF_MODEL or "FALCON",
         "format": "MP3",
-        "sampleRate": 24000,
-        "channelType": "MONO",
+        "sampleRate": _MURF_SAMPLE_RATE,
+        "channelType": _MURF_CHANNEL_TYPE or "MONO",
     }
 
     try:
@@ -228,6 +281,21 @@ def _tem_ffplay() -> bool:
         return False
 
 
+def _resolver_dispositivo_audio():
+    if not _AUDIO_DEVICE or not sd:
+        return None
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return None
+    target = _AUDIO_DEVICE.lower()
+    for idx, dev in enumerate(devices):
+        name = str(dev.get("name", "")).lower()
+        if dev.get("max_output_channels", 0) > 0 and target in name:
+            return idx
+    return None
+
+
 def _tocar_mp3_ffplay(path: str):
     if _FFPLAY_PATH and os.path.isfile(_FFPLAY_PATH):
         cmd = [_FFPLAY_PATH, "-nodisp", "-autoexit", "-loglevel", "error", path]
@@ -270,6 +338,74 @@ def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
         if proc.poll() is None:
             proc.kill()
     return time.perf_counter()
+
+
+def _tocar_audio_arquivo(path: str, fmt: str) -> None:
+    fmt = (fmt or "").upper()
+    if fmt == "WAV":
+        if sd and sf:
+            try:
+                data, samplerate = sf.read(path, dtype="float32")
+                device = _resolver_dispositivo_audio()
+                if _AUDIO_DEVICE and device is None:
+                    logging.warning(
+                        "Dispositivo de audio '%s' nao encontrado. Usando padrao.",
+                        _AUDIO_DEVICE,
+                    )
+                sd.play(data, samplerate, device=device)
+                sd.wait()
+                return
+            except Exception as e:
+                logging.warning("Falha ao tocar WAV via sounddevice: %s", e)
+        try:
+            winsound.PlaySound(path, winsound.SND_FILENAME)
+            return
+        except Exception:
+            pass
+    if not _tem_ffplay():
+        raise RuntimeError("ffplay nao encontrado no PATH (instale ffmpeg)")
+    _tocar_mp3_ffplay(path)
+
+
+def _murf_generate_audio(texto: str, fmt: str) -> dict:
+    url = f"{_MURF_BASE_URL}/v1/speech/generate"
+    headers = {"api-key": _MURF_API_KEY, "Content-Type": "application/json"}
+    payload = {
+        "text": texto,
+        "voiceId": _MURF_VOICE,
+        "format": fmt,
+        "encodeAsBase64": True,
+    }
+    if _MURF_STYLE:
+        payload["style"] = _MURF_STYLE
+    if _MURF_LOCALE:
+        payload["multiNativeLocale"] = _MURF_LOCALE
+    r = requests.post(url, headers=headers, json=payload, timeout=120)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Murf HTTP {r.status_code}: {r.text[:200]}")
+    return r.json()
+
+
+def _murf_save_audio(resp: dict, fmt: str) -> str:
+    suffix = ".wav" if fmt.upper() == "WAV" else ".mp3"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        path = tmp.name
+
+    b64 = resp.get("encodedAudio") or resp.get("audioBase64")
+    if b64:
+        with open(path, "wb") as f:
+            f.write(base64.b64decode(b64))
+        return path
+
+    url = resp.get("audioFile") or resp.get("audioUrl")
+    if url:
+        ar = requests.get(url, timeout=120)
+        ar.raise_for_status()
+        with open(path, "wb") as f:
+            f.write(ar.content)
+        return path
+
+    raise RuntimeError("Resposta do Murf sem audio.")
 
 
 def _vad_rejeitar_audio(audio: sr.AudioData) -> bool:

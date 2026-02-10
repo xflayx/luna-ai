@@ -1,9 +1,17 @@
 # skills/conversa.py
 import os
+import warnings
 from typing import Optional
+
+try:
+    from pydantic.warnings import ArbitraryTypeWarning
+    warnings.filterwarnings("ignore", category=ArbitraryTypeWarning)
+except Exception:
+    warnings.filterwarnings("ignore", message=r".*is not a Python type.*")
 
 from google import genai
 from google.genai import types
+import logging
 import yaml
 import pyperclip
 import unicodedata
@@ -12,10 +20,15 @@ from config.env import init_env
 from config.state import STATE
 from core import memory
 from core.prompt_injector import PromptSection, build_prompt
+from core.realtime_panel import atualizar_estado
 
 
 init_env()
 
+
+logger = logging.getLogger("Conversa")
+
+FALLBACK_MSG = "Ainda estou pensando aqui, tenta de novo em instantes."
 
 SKILL_INFO = {
     "nome": "Conversa",
@@ -43,7 +56,7 @@ _current_key_index = 0
 
 
 def inicializar():
-    print(f"{SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
+    print(f"✅ {SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
 
 
 def executar(comando: str) -> str:
@@ -148,12 +161,26 @@ def _conversar(msg: str) -> str:
                 )
             return _normalizar_resposta(resposta)
         except Exception as exc:
+            status_code = _extrair_status_code(exc)
+            key_info = f"key {_current_key_index + 1}/{len(API_KEYS)}"
+            logger.error(
+                "Erro Gemini (%s, %s, tentativa %s/%s)",
+                status_code,
+                key_info,
+                tentativa + 1,
+                len(API_KEYS),
+            )
+            try:
+                status = f"Erro Gemini [{status_code}] {key_info}"
+                atualizar_estado(status=status)
+            except Exception:
+                pass
             if _pode_trocar_chave(exc) and tentativa < len(API_KEYS) - 1:
                 _trocar_chave()
                 continue
             break
 
-    return "Nao consegui falar com o Gemini agora."
+    return FALLBACK_MSG
 
 
 def _montar_mensagem(msg: str) -> str:
@@ -352,6 +379,18 @@ def _pode_trocar_chave(exc: Exception) -> bool:
     return any(x in texto for x in ["429", "quota", "RESOURCE_EXHAUSTED", "rate limit"])
 
 
+def _extrair_status_code(exc: Exception) -> str:
+    for attr in ("status_code", "code", "status"):
+        val = getattr(exc, attr, None)
+        if isinstance(val, int):
+            return str(val)
+    texto = str(exc)
+    for token in texto.split():
+        if token.isdigit() and len(token) in (3, 4):
+            return token
+    return "erro"
+
+
 def _extract_text(response) -> str:
     text = getattr(response, "text", None)
     if text:
@@ -459,7 +498,7 @@ def _precisa_reforco(resposta: str, msg: str) -> bool:
 
 def _normalizar_resposta(texto: Optional[str]) -> str:
     if not texto:
-        return "Nao consegui gerar uma resposta agora."
+        return FALLBACK_MSG
     limpa = texto.strip()
     if limpa and not limpa.endswith((".", "!", "?")):
         limpa += "."

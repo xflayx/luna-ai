@@ -1,4 +1,5 @@
 # core/intent.py - Sistema simples sem Gemini
+import re
 import unicodedata
 
 from config.state import STATE
@@ -50,6 +51,23 @@ def _eh_pergunta_visual(cmd_norm: str) -> bool:
     return any(i in cmd_norm for i in interrogativos) and any(v in cmd_norm for v in visuais)
 
 
+def _separar_termos(termos: list[str]) -> tuple[list[str], list[str]]:
+    palavras = [t for t in termos if " " not in t]
+    frases = [t for t in termos if " " in t]
+    return palavras, frases
+
+
+def _tem_palavra(cmd_norm: str, palavras: list[str]) -> bool:
+    if not palavras:
+        return False
+    pattern = r"\b(" + "|".join(re.escape(p) for p in palavras) + r")\b"
+    return re.search(pattern, cmd_norm) is not None
+
+
+def _tem_frase(cmd_norm: str, frases: list[str]) -> bool:
+    return any(f in cmd_norm for f in frases)
+
+
 def detectar_intencao(cmd: str) -> str:
     """Detecta intencao usando apenas keywords - sem API"""
 
@@ -66,7 +84,7 @@ def detectar_intencao(cmd: str) -> str:
             return "sequencia"
 
     # Sequencias
-    if any(p in cmd_norm for p in ["executar", "sequencia", "macro", "gravar", "parar", "grave", "rode"]):
+    if _tem_palavra(cmd_norm, ["executar", "sequencia", "macro", "gravar", "parar", "grave", "rode"]):
         return "sequencia"
     if any(char.isdigit() for char in cmd):
         if any(p in cmd_norm for p in ["sequencia", "macro", "executar", "rodar", "repetir", "loop"]):
@@ -106,27 +124,34 @@ def detectar_intencao(cmd: str) -> str:
         "placa",
         "texto",
     ]
-    if any(t in cmd_norm for t in termos_foco):
+    palavras_foco, frases_foco = _separar_termos(termos_foco)
+    if _tem_palavra(cmd_norm, palavras_foco) or _tem_frase(cmd_norm, frases_foco):
         return "vision"
     if any(v in cmd_norm for v in ["reanalisar", "reanalise", "analise novamente", "analise de novo", "ultima captura", "ultima imagem", "ultimas imagens"]):
         return "vision"
-    if any(v in cmd_norm for v in ["analise", "analisar", "veja", "olhe", "ve", "tela", "screenshot"]):
-        if any(t in cmd_norm for t in ["tela", "imagem", "foto", "isso", "captura", "print"]):
+    if _tem_palavra(cmd_norm, ["analise", "analisar", "veja", "olhe", "ve", "tela", "screenshot"]):
+        if _tem_palavra(cmd_norm, ["tela", "imagem", "foto", "isso", "captura", "print"]):
             return "vision"
 
     if _eh_pergunta_visual(cmd_norm):
         return "vision"
+    if _tem_palavra(cmd_norm, ["level", "nivel"]) and (
+        _tem_palavra(cmd_norm, ["jogo"]) or _tem_palavra(cmd_norm, ["tela", "imagem", "foto", "print"])
+    ):
+        return "vision"
 
     # Preco
-    if any(p in cmd_norm for p in ["preco", "valor", "cotacao", "bitcoin", "dolar", "real", "crypto"]):
+    if _tem_palavra(cmd_norm, ["preco", "valor", "cotacao", "bitcoin", "dolar", "real", "crypto"]):
         return "price"
 
     # Sistema
-    if any(s in cmd_norm for s in ["sistema", "cpu", "memoria", "ram", "temperatura"]):
+    if _tem_palavra(cmd_norm, ["sistema", "cpu", "memoria", "ram", "temperatura"]):
         return "system_monitor"
 
     # YouTube
-    if any(y in cmd_norm for y in ["youtube", "youtu.be", "video"]):
+    if any(y in cmd_norm for y in ["youtu.be", "youtube.com"]):
+        return "youtube_summary"
+    if _tem_palavra(cmd_norm, ["youtube", "video"]):
         return "youtube_summary"
 
     # Link Scraper
@@ -134,16 +159,26 @@ def detectar_intencao(cmd: str) -> str:
         return "link_scraper"
 
     # Web
-    if any(w in cmd_norm for w in ["site", "pagina", "link", "url", "http", "leia", "resuma", "resumo", "post", "tweet", "x.com", "twitter.com"]):
+    if any(w in cmd_norm for w in ["http", "x.com", "twitter.com"]):
+        return "web_reader"
+    if re.search(r"\b(site|pagina|link|url|leia|resuma|resumo|post|tweet)\b", cmd_norm):
         return "web_reader"
 
     # Game
-    if any(g in cmd_norm for g in ["jogo", "game", "dica", "build", "guia"]):
+    if _tem_palavra(cmd_norm, ["dica", "build", "guia", "tutorial"]):
         return "game_guide"
 
     # Menu
-    if any(m in cmd_norm for m in ["menu", "radial", "atalho"]):
+    if _tem_palavra(cmd_norm, ["menu", "radial", "atalho"]):
         return "atalhos_radial"
+
+    # TTS
+    if _tem_palavra(cmd_norm, ["tts", "narrar", "narracao", "murf", "voz"]):
+        return "tts"
+    if _tem_frase(cmd_norm, ["ler roteiro", "leia o roteiro"]):
+        return "tts"
+    if re.search(r"\b(arquivo|file)\s*:\s*.+", cmd_norm):
+        return "tts"
 
     # Conversa (padrao)
     return "conversa"

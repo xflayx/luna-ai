@@ -46,7 +46,7 @@ GROQ_MODEL = os.getenv("LUNA_GROQ_MODEL", "llama-3.1-8b-instant")
 
 
 def inicializar():
-    print(f"{SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
+    print(f"✅ {SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
 
 
 def executar(cmd: str) -> str:

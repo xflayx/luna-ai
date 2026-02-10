@@ -1,6 +1,19 @@
 # config/state.py
+import json
+import os
 from datetime import datetime
+
+from config.env import init_env
 from core import memory
+
+init_env()
+
+_BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+_DEFAULT_HISTORY_PATH = os.path.join(_BASE_DIR, "memory", "chat_history.json")
+_HISTORY_PATH = os.getenv("LUNA_CHAT_HISTORY_PATH", _DEFAULT_HISTORY_PATH)
+if not os.path.isabs(_HISTORY_PATH):
+    _HISTORY_PATH = os.path.join(_BASE_DIR, _HISTORY_PATH)
+_HISTORY_MAX = int(os.getenv("LUNA_CHAT_HISTORY_MAX", "20"))
 
 
 class StateManager:
@@ -13,7 +26,7 @@ class StateManager:
 
         # Conversa
         self.em_conversa_ativa = False
-        self.historico = []
+        self.historico = self._carregar_historico()
         self.ultima_skill_usada = None
         self.ultima_visao = None
         self.ultima_visao_ts = None
@@ -36,9 +49,30 @@ class StateManager:
             "comando": comando,
             "resposta": resposta,
         })
-        if len(self.historico) > 20:
-            self.historico = self.historico[-20:]
+        if len(self.historico) > _HISTORY_MAX:
+            self.historico = self.historico[-_HISTORY_MAX:]
+        self._salvar_historico()
         memory.adicionar_memoria_curta(f"U: {comando}\nL: {resposta}", origem="dialogo")
+
+    def _carregar_historico(self):
+        if not os.path.isfile(_HISTORY_PATH):
+            return []
+        try:
+            with open(_HISTORY_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+        return []
+
+    def _salvar_historico(self):
+        try:
+            os.makedirs(os.path.dirname(_HISTORY_PATH), exist_ok=True)
+            with open(_HISTORY_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.historico, f, ensure_ascii=True, indent=2)
+        except Exception:
+            pass
 
     def obter_contexto_curto(self):
         if not self.historico:

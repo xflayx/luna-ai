@@ -16,6 +16,8 @@ Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa LLMs
 - Atalhos radial e guia de jogos baseado na tela
 - STT via Groq ASR com fallback para Google
 - System prompt via YAML com fallback para system_message.txt
+- Config central opcional via `config/assistant_config.yaml` (override do .env)
+- Historico persistente em `memory/chat_history.json`
 - Legendas no OBS via WebSocket v5
 - Painel realtime (Flask + Socket.IO)
 
@@ -49,7 +51,11 @@ Notas:
   pipwin install pyaudio
   ```
 
-## Configuracao (.env)
+## Configuracao (.env ou YAML)
+Voce pode usar o `.env` **ou** o `config/assistant_config.yaml`.
+O YAML sobrescreve o `.env` apenas quando o valor estiver preenchido.
+
+### Exemplo .env
 Crie um arquivo `.env` com as chaves que voce usar:
 
 ```
@@ -74,6 +80,16 @@ COINMARKETCAP_API_KEY=...
 MURF_API_KEY=...
 LUNA_TTS_ENGINE=murf
 LUNA_MURF_VOICE=pt-BR-isadora
+MURF_FORMAT=WAV
+MURF_STYLE=Conversational
+MURF_LOCALE=pt-BR
+MURF_RATE=15
+MURF_PITCH=10
+MURF_MODEL=FALCON
+MURF_SAMPLE_RATE=24000
+MURF_CHANNEL_TYPE=MONO
+MURF_BASE_URL=https://api.murf.ai
+MURF_STREAM_URL=https://global.api.murf.ai/v1/speech/stream
 LUNA_FFPLAY_PATH=...
 
 # memoria curta
@@ -81,6 +97,8 @@ LUNA_MEM_LENGTH=2
 LUNA_SYSTEM_PROMPT_PATH=system_message.txt
 LUNA_SYSTEM_YAML_PATH=system_message.yaml
 LUNA_PROMPT_ORDER=inject_then_trim
+LUNA_CHAT_HISTORY_PATH=memory/chat_history.json
+LUNA_CHAT_HISTORY_MAX=20
 
 # painel realtime
 LUNA_PANEL_ENABLED=1
@@ -98,6 +116,29 @@ LUNA_OBS_WRAP_CHARS=42
 LUNA_OBS_CLEAR_SEC=6
 LUNA_OBS_CLEAR_HIDE=1
 LUNA_OBS_SCENE=MinhaCena
+
+# Integracao chat (Twitch/YouTube)
+LUNA_TWITCH_ENABLED=0
+LUNA_TWITCH_NICK=seu_bot
+LUNA_TWITCH_OAUTH=oauth:seu_token
+LUNA_TWITCH_CHANNEL=seu_canal
+
+LUNA_YT_ENABLED=0
+LUNA_YT_API_KEY=...
+LUNA_YT_LIVE_CHAT_ID=...
+LUNA_YT_POLL_MS=5000
+
+# Resposta por voz para chat
+LUNA_CHAT_REPLY_ENABLED=0
+LUNA_CHAT_REPLY_MODE=mention  # mention | prefix | all
+LUNA_CHAT_REPLY_PREFIX=!luna
+LUNA_CHAT_REPLY_NAME=luna
+LUNA_CHAT_REPLY_MIN_INTERVAL=8
+LUNA_CHAT_REPLY_USER_COOLDOWN=30
+LUNA_CHAT_REPLY_MAX_CHARS=200
+LUNA_CHAT_REPLY_PLATFORMS=twitch,youtube
+LUNA_CHAT_REPLY_QUEUE_MAX=20
+LUNA_CHAT_REPLY_IGNORE_USERS=
 ```
 
 ## Uso rapido
@@ -115,9 +156,11 @@ Exemplos de comandos por voz:
 - `skills`: habilidades (vision, web_reader, youtube_summary, etc)
 - `llm`: integracoes com LLM
 - `config`: estado e configuracoes
+- `config/assistant_config.yaml`: config central opcional (override do .env)
 - `data`: macros/seqs gravadas
 - `interface`: menu radial (eel)
 - `system_message.yaml`: prompt principal (fallback para `system_message.txt`)
+- `memory/chat_history.json`: historico persistente da conversa
 
 ## Testes
 ```bash

@@ -44,7 +44,7 @@ def build_vision_analysis_prompt(contexto: str, cmd: str, foco: str | None) -> s
         "Analise a imagem e responda:\n"
         "- Descreva a cena com detalhes objetivos\n"
         "- Interprete o contexto (o que parece estar acontecendo)\n"
-        "Use 1 a 2 frases completas, sem listas."
+        "Use 1 a 2 frases sempre completas, sem listas."
     )
     if foco:
         base += f"\n- Foque em {foco} e detalhes relacionados."
@@ -103,8 +103,9 @@ def build_game_guide_prompt(contexto: str, busca: str) -> str:
         "3. Resuma o passo a passo de forma clara e direta\n"
         "4. Se houver varios metodos, cite o mais rapido\n"
         "5. Use tom sarcastico e confiante\n"
-        "6. Responda em 3-5 frases uteis\n"
-        "7. SEM usar *, -, # ou listas\n\n"
+        "6. Responda em portugues brasileiro\n"
+        "7. Responda em 3-5 frases uteis\n"
+        "8. SEM usar *, -, # ou listas\n\n"
         "Responda como se estivesse explicando ao vivo."
     )
 

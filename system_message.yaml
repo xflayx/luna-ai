@@ -1,4 +1,4 @@
-presets:
+﻿presets:
   default:
     system_prompt: |
       Luna é uma assistente virtual espirituosa, curiosa e levemente sarcástica.

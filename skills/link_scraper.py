@@ -5,21 +5,18 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
 from skills.web_reader import capturar_url_atual
 
-# ========================================
-# METADADOS DA SKILL (Padrao de Plugin)
-# ========================================
 
 SKILL_INFO = {
     "nome": "Link Scraper",
     "descricao": "Extrai todos os links de um site e salva em .txt",
     "versao": "1.0.0",
     "autor": "Luna Team",
-    "intents": ["link_scraper"]
+    "intents": ["link_scraper"],
 }
 
-# Gatilhos para esta skill
 GATILHOS = [
     "extrair links",
     "listar links",
@@ -29,17 +26,11 @@ GATILHOS = [
     "raspar links",
 ]
 
-# ========================================
-# INICIALIZACAO (Opcional)
-# ========================================
 
 def inicializar():
-    """Chamada quando a skill e carregada"""
-    print(f"? {SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
+    """Chamada quando a skill é carregada."""
+    print(f"✅ {SKILL_INFO['nome']} v{SKILL_INFO['versao']} inicializada")
 
-# ========================================
-# FUNCAO PRINCIPAL
-# ========================================
 
 def executar(comando: str) -> str:
     """Extrai links de uma URL e salva em arquivo .txt."""
@@ -47,7 +38,7 @@ def executar(comando: str) -> str:
     if not url:
         url = capturar_url_atual()
     if not url:
-        return "Nao encontrei nenhuma pagina aberta. Abra um site e tente novamente."
+        return "Não encontrei nenhuma página aberta. Abra um site e tente novamente."
 
     try:
         links = _coletar_links(url, max_pages=30)
@@ -55,21 +46,17 @@ def executar(comando: str) -> str:
         return f"Erro ao acessar o site: {e}"
 
     if not links:
-        return "Nao encontrei links nessa pagina."
+        return "Não encontrei links nessa página."
 
     caminho = _salvar_links(links, url)
     return f"Salvei {len(links)} links em: {caminho}"
 
-# ========================================
-# FUNCOES AUXILIARES
-# ========================================
 
 def _extrair_url(comando: str) -> str | None:
     match = re.search(r"https?://\S+", comando)
     if not match:
         return None
-    url = match.group(0).strip().rstrip(".,;)]")
-    return url
+    return match.group(0).strip().rstrip(".,;)]")
 
 
 def _coletar_links(url: str, max_pages: int = 30) -> list[str]:
@@ -104,7 +91,6 @@ def _coletar_links(url: str, max_pages: int = 30) -> list[str]:
                 vistos_links.add(link)
                 links.append(link)
 
-            # Enfileira apenas links internos para varredura profunda
             parsed = urlparse(link)
             if parsed.netloc == origem and link not in visitados:
                 fila.append(link)
@@ -115,7 +101,7 @@ def _coletar_links(url: str, max_pages: int = 30) -> list[str]:
 def _normalizar_link(href: str, base_url: str) -> str | None:
     if not href or href.startswith("#"):
         return None
-    if href.startswith("mailto:") or href.startswith("javascript:") or href.startswith("tel:"):
+    if href.startswith(("mailto:", "javascript:", "tel:")):
         return None
 
     link = urljoin(base_url, href)
@@ -144,10 +130,7 @@ def _nome_arquivo_por_url(url: str) -> str:
     host = parsed.netloc.split(":")[0]
     if host:
         partes = [p for p in host.split(".") if p]
-        if partes:
-            nome = partes[0]
-        else:
-            nome = "links"
+        nome = partes[0] if partes else "links"
     else:
         nome = "links"
     nome = "".join(ch for ch in nome if ch.isalnum() or ch in ("-", "_")).strip()
