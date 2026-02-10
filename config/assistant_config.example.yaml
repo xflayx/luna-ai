@@ -1,4 +1,4 @@
-# Central config for Luna. Values here override .env only if non-empty.
+# Template para commit. Mantem estrutura, remove segredos.
 env:
   LUNA_TTS_ENGINE: "murf"
   MURF_API_KEY: ""
@@ -37,7 +37,7 @@ env:
   LUNA_MEM_LENGTH: "2"
   LUNA_TWITCH_ENABLED: "1"
   LUNA_TWITCH_NICK: "flay01"
-  LUNA_TWITCH_OAUTH: "y3d9rt15bti01d3zeny8lsyvmjotu7"
+  LUNA_TWITCH_OAUTH: ""
   LUNA_TWITCH_CHANNEL: "flay01"
   LUNA_YT_ENABLED: "0"
   LUNA_YT_API_KEY: ""
