@@ -5,6 +5,7 @@ data/
 memory/
 backup/
 .context/
+outputs/
 *.log
 *.mp3
 *.wav
