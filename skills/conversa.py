@@ -15,12 +15,14 @@ import logging
 import yaml
 import pyperclip
 import unicodedata
+import re
 
 from config.env import init_env
 from config.state import STATE
 from core import memory
-from core.prompt_injector import PromptSection, build_prompt
+from core.prompt_injector import PromptSection, build_prompt, build_temperamento_section
 from core.realtime_panel import atualizar_estado
+from core.http_client import SESSION
 
 
 init_env()
@@ -41,6 +43,8 @@ SKILL_INFO = {
 GATILHOS = ["conversa", "falar", "chat", "papo", "fale comigo"]
 
 MODEL_NAME = os.getenv("LUNA_GEMINI_MODEL", "gemini-3-flash-preview")
+_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+_GROQ_MODEL = os.getenv("LUNA_GROQ_MODEL", "llama-3.1-8b-instant")
 _BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 _DEFAULT_SYSTEM_PROMPT_PATH = os.path.join(_BASE_DIR, "system_message.txt")
 _DEFAULT_SYSTEM_YAML_PATH = os.path.join(_BASE_DIR, "system_message.yaml")
@@ -127,7 +131,7 @@ def _injetar_clipboard_se_necessario(msg: str) -> str:
 
 def _conversar(msg: str) -> str:
     if not API_KEYS:
-        return "GEMINI_API_KEY nao configurada."
+        return _conversar_groq(msg)
 
     contents = [_montar_mensagem(msg)]
     system_instruction = _montar_prompt_personalidade(msg)
@@ -180,7 +184,28 @@ def _conversar(msg: str) -> str:
                 continue
             break
 
-    return FALLBACK_MSG
+    # Fallback Groq
+    resp_groq = _conversar_groq(msg)
+    return resp_groq or FALLBACK_MSG
+
+
+def _conversar_groq(msg: str) -> str:
+    if not _GROQ_API_KEY:
+        return "GEMINI_API_KEY nao configurada."
+    prompt = _montar_mensagem(msg)
+    system_instruction = _montar_prompt_personalidade(msg)
+    temperature = _temperatura_modo()
+    max_tokens = _max_tokens_modo()
+    texto, erro = _groq_chat(
+        system_instruction=system_instruction,
+        user_prompt=prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    if erro:
+        logger.error("Erro Groq: %s", erro)
+        return FALLBACK_MSG
+    return _normalizar_resposta(texto)
 
 
 def _montar_mensagem(msg: str) -> str:
@@ -215,8 +240,16 @@ def _montar_mensagem(msg: str) -> str:
 def _montar_prompt_personalidade(msg: str) -> str:
     modo = STATE.get_modo_ativacao()
     base = _carregar_system_prompt()
+    temperamento = STATE.get_temperamento()
 
-    secoes = [PromptSection(base, priority=100, label="base")]
+    secoes = [
+        PromptSection(base, priority=100, label="base"),
+        PromptSection(
+            build_temperamento_section(temperamento),
+            priority=95,
+            label="temperamento",
+        ),
+    ]
     if modo == "vtuber":
         secoes.append(
             PromptSection(
@@ -226,6 +259,16 @@ def _montar_prompt_personalidade(msg: str) -> str:
                 label="modo",
             )
         )
+
+    secoes.append(
+        PromptSection(
+            "Regra critica: nao use asteriscos nem indicacoes de acao/encenacao "
+            "(ex: suspira, risos, pausa, resmunga, corta, cut). "
+            "Responda apenas com fala natural.",
+            priority=85,
+            label="anti_acao",
+        )
+    )
 
     instrucoes_extras = []
     msg_lower = msg.lower()
@@ -264,6 +307,7 @@ def _montar_prompt_personalidade(msg: str) -> str:
         )
 
     return build_prompt("", secoes)
+
 
 
 def _obter_prompt_order() -> str:
@@ -431,6 +475,44 @@ def _tentar_reforco(
         return ""
 
 
+def _groq_chat(
+    system_instruction: str,
+    user_prompt: str,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, str]:
+    headers = {
+        "Authorization": f"Bearer {_GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": _GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    try:
+        resp = SESSION.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=45,
+        )
+        if resp.status_code != 200:
+            return "", f"status_{resp.status_code}:{resp.text}"
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return "", "empty_response"
+        content = choices[0].get("message", {}).get("content", "").strip()
+        return content, ""
+    except Exception as e:
+        return "", str(e)
+
+
 def _pede_opiniao(msg_lower: str) -> bool:
     termos = [
         "o que voce acha",
@@ -499,7 +581,29 @@ def _precisa_reforco(resposta: str, msg: str) -> bool:
 def _normalizar_resposta(texto: Optional[str]) -> str:
     if not texto:
         return FALLBACK_MSG
-    limpa = texto.strip()
+    limpa = texto.replace("*", "").strip()
+    limpa = _remover_indicacoes_acao(limpa)
     if limpa and not limpa.endswith((".", "!", "?")):
         limpa += "."
     return limpa
+
+
+def _remover_indicacoes_acao(texto: str) -> str:
+    # Remove palavras de encenacao comuns quando aparecem isoladas.
+    termos = [
+        "suspira",
+        "suspiro",
+        "risos",
+        "riso",
+        "pausa",
+        "resmunga",
+        "resmungando",
+        "corta",
+        "cut",
+    ]
+    pattern = r"(?i)(?<![\\w])(" + "|".join(map(re.escape, termos)) + r")(?![\\w])"
+    texto = re.sub(pattern, "", texto)
+    # Normaliza espacos e sinais duplicados
+    texto = re.sub(r"\s{2,}", " ", texto)
+    texto = re.sub(r"\s+([,.;!?])", r"\\1", texto)
+    return texto.strip()

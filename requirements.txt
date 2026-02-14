@@ -4,7 +4,7 @@
 
 # --- CORE / ESSENCIAIS ---
 python-dotenv==1.0.0
-PyYAML>=6.0.0
+PyYAML==6.0.3
 
 # --- VOZ (Speech Recognition & TTS) ---
 SpeechRecognition==3.10.1
@@ -12,14 +12,15 @@ pyttsx3==2.90
 pyaudio==0.2.14
 sounddevice==0.4.6
 soundfile==0.12.1
+faster-whisper==1.2.1
 
 # --- LLM / AI ---
 google-genai==0.8.0
 # Groq SDK (STT/ASR)
-groq
+groq==1.0.0
 
 # --- INTERFACE / GUI ---
-eel==0.16.0
+Eel==0.16.0
 
 # --- AUTOMACAO ---
 pyautogui==0.9.54
@@ -42,8 +43,8 @@ psutil==6.1.0
 webrtcvad==2.0.10
 
 # --- TESTES ---
-pytest>=8.0.0
-pytest-mock>=3.12.0
+pytest==9.0.2
+pytest-mock==3.15.1
 
 # --- PAINEL REALTIME ---
 Flask==3.0.3
@@ -54,10 +55,10 @@ obsws-python==1.1.1
 
 # --- DEPENDENCIAS IMPLICITAS (podem ser necessarias) ---
 # Estas sao instaladas automaticamente, mas listadas para clareza
-certifi>=2024.0.0
-charset-normalizer>=3.0.0
-idna>=3.0
-urllib3>=2.0.0
+certifi==2026.1.4
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.6.3
 
 # ============================================
 # INSTALACAO:

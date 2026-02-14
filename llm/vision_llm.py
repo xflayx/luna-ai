@@ -190,6 +190,15 @@ def _is_quota_error(erro_str: str) -> bool:
     ])
 
 
+def _short_error(erro_str: str) -> str:
+    if _is_quota_error(erro_str):
+        return "429"
+    for token in erro_str.split():
+        if token.isdigit() and len(token) in (3, 4):
+            return token
+    return "erro"
+
+
 
 def analisar_imagem_llm(
 
@@ -346,7 +355,7 @@ def analisar_imagem_llm(
 
         # Se chegou aqui, todas falharam
 
-        raise Exception(f"Falha após {tentativas_max} chaves. Último erro: {ultimo_erro}")
+        raise Exception(f"Falha após {tentativas_max} chaves. Último erro: {_short_error(str(ultimo_erro))}")
 
     
 
@@ -517,5 +526,5 @@ def gerar_opiniao(prompt: str) -> str:
 
     # Se chegou aqui, todas falharam
 
-    raise Exception(f"Falha após {len(API_KEYS)} chaves. Último erro: {ultimo_erro}")
+    raise Exception(f"Falha após {len(API_KEYS)} chaves. Último erro: {_short_error(str(ultimo_erro))}")
 

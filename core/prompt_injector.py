@@ -4,6 +4,22 @@ from dataclasses import dataclass
 import os
 from typing import Iterable
 
+def _instrucao_temperamento(temperamento: str) -> str:
+    t = (temperamento or "").lower()
+    if t == "feliz":
+        return "Responda com tom leve, otimista e caloroso, sem exagerar."
+    if t == "cansada":
+        return "Responda de forma mais curta e economica, com leve cansaco."
+    if t == "triste":
+        return "Use tom mais suave e melancolico, mas ainda prestativo."
+    if t == "rabujenta":
+        return "Use tom mais resmungao e ironico, sem ser agressiva."
+    return "Ajuste o tom da resposta conforme esse temperamento."
+
+
+def build_temperamento_section(temperamento: str) -> str:
+    return f"Temperamento atual: {temperamento}. {_instrucao_temperamento(temperamento)}"
+
 
 @dataclass(frozen=True)
 class PromptSection:
@@ -52,9 +68,16 @@ def build_vision_analysis_prompt(contexto: str, cmd: str, foco: str | None) -> s
 
 
 def build_vision_opinion_prompt(cmd: str, analise: str, foco: str | None) -> str:
+    # Temperamento influencia apenas a opiniao/reacao, nao a analise objetiva.
+    try:
+        from config.state import STATE
+        temperamento = STATE.get_temperamento()
+    except Exception:
+        temperamento = "neutra"
     base = (
         "Voce e a Luna, VTuber reagindo ao jogo.\n"
         f"Pedido do usuario: '{cmd}'\n\n"
+        f"{build_temperamento_section(temperamento)}\n\n"
         "ANALISE:\n"
         f"{analise}\n\n"
         "Regras:\n"

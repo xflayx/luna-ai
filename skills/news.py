@@ -46,7 +46,7 @@ def buscar_noticias(query: str) -> str:
     }
 
     try:
-        r = requests.get("https://serpapi.com/search", params=params, timeout=10)
+        r = SESSION.get("https://serpapi.com/search", params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
 
@@ -98,3 +98,4 @@ def _normalizar(texto: str) -> str:
         .encode("ascii", "ignore")
         .decode("ascii")
     )
+from core.http_client import SESSION

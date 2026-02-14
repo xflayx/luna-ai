@@ -117,7 +117,7 @@ def _baixar_transcricao(video_id: str, lang: str, asr: bool) -> str | None:
     if asr:
         params["kind"] = "asr"
     try:
-        resp = requests.get("https://video.google.com/timedtext", params=params, timeout=15)
+        resp = SESSION.get("https://video.google.com/timedtext", params=params, timeout=15)
         if resp.status_code != 200 or not resp.text.strip():
             return None
         return _parsear_transcricao(resp.text)
@@ -260,7 +260,7 @@ def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> tuple[str, s
         "max_tokens": max_tokens,
     }
     try:
-        resp = requests.post(
+        resp = SESSION.post(
             "https://api.groq.com/openai/v1/chat/completions",
             json=payload,
             headers=headers,
@@ -281,3 +281,4 @@ def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> tuple[str, s
 def _erro_contexto(erro: str) -> bool:
     texto = erro.lower()
     return any(k in texto for k in ["context", "token", "length", "too large"])
+from core.http_client import SESSION

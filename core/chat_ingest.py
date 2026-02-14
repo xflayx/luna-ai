@@ -10,6 +10,7 @@ from typing import Optional
 import requests
 
 from config.env import init_env
+from core.http_client import SESSION
 from core import memory
 from core import voice
 from skills import conversa
@@ -188,7 +189,7 @@ def _youtube_loop() -> None:
         if page_token:
             params["pageToken"] = page_token
         try:
-            resp = requests.get(base_url, params=params, timeout=15)
+            resp = SESSION.get(base_url, params=params, timeout=15)
             if resp.status_code != 200:
                 print(f"YouTube chat erro HTTP {resp.status_code}")
                 _sleep(poll_default)

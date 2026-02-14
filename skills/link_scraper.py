@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from skills.web_reader import capturar_url_atual
+from core.http_client import SESSION
 
 
 SKILL_INFO = {
@@ -75,7 +76,7 @@ def _coletar_links(url: str, max_pages: int = 30) -> list[str]:
             continue
         visitados.add(atual)
 
-        resp = requests.get(atual, headers=headers, timeout=15)
+        resp = SESSION.get(atual, headers=headers, timeout=15)
         resp.raise_for_status()
         content_type = resp.headers.get("Content-Type", "")
         if "text/html" not in content_type:

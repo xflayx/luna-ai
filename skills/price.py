@@ -110,7 +110,7 @@ def buscar_preco(nome_ou_simbolo: str) -> dict | None:
     url_quotes = f"{CMC_BASE_URL}/cryptocurrency/quotes/latest"
 
     try:
-        r = requests.get(
+        r = SESSION.get(
             url_quotes,
             headers=HEADERS,
             params={"symbol": nome_ou_simbolo.upper()},
@@ -124,7 +124,7 @@ def buscar_preco(nome_ou_simbolo: str) -> dict | None:
         pass
 
     try:
-        r_map = requests.get(f"{CMC_BASE_URL}/cryptocurrency/map", headers=HEADERS, timeout=10)
+        r_map = SESSION.get(f"{CMC_BASE_URL}/cryptocurrency/map", headers=HEADERS, timeout=10)
         if r_map.status_code == 200:
             map_data = r_map.json().get("data", [])
             candidatos = [
@@ -136,7 +136,7 @@ def buscar_preco(nome_ou_simbolo: str) -> dict | None:
 
             if candidatos:
                 escolhido = sorted(candidatos, key=lambda x: x.get("rank", 99999))[0]
-                r_final = requests.get(
+                r_final = SESSION.get(
                     url_quotes,
                     headers=HEADERS,
                     params={"id": escolhido["id"]},
@@ -162,3 +162,4 @@ def formatar_data(crypto: dict) -> dict | None:
         }
     except Exception:
         return None
+from core.http_client import SESSION

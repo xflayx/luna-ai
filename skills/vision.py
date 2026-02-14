@@ -1,23 +1,25 @@
 ﻿# skills/vision.py
-import hashlib
-import os
-import requests
-import shutil
-import tempfile
-import threading
-import time
-import unicodedata
-
-from PIL import ImageGrab
-
-from llm.vision_llm import analisar_imagem, gerar_opiniao
+import hashlib
+import os
+import requests
+import shutil
+import tempfile
+import threading
+import time
+import unicodedata
+import base64
+
+from PIL import ImageGrab
+
+from llm.vision_llm import analisar_imagem, gerar_opiniao
 from core.prompt_injector import (
     build_vision_analysis_prompt,
     build_vision_opinion_prompt,
     build_vision_opinion_reforco,
 )
 from config.state import STATE
-from core import voice
+from core import voice
+from core.http_client import SESSION
 
 # ========================================
 # METADADOS DA SKILL
@@ -44,13 +46,21 @@ GATILHOS = [
 # CONFIGURACAO DO MODO AUTOMATICO
 # ========================================
 
-_AUTO_INTERVAL_SEC = float(os.getenv("LUNA_VISION_AUTO_SEC", "6"))
-_auto_thread = None
-_auto_stop = threading.Event()
-_last_hash = None
+_AUTO_ENABLED = os.getenv("LUNA_VISION_AUTO_ENABLED", "1") == "1"
+_AUTO_INTERVAL_SEC = float(os.getenv("LUNA_VISION_AUTO_SEC", "20"))
+_AUTO_COOLDOWN_SEC = float(os.getenv("LUNA_VISION_AUTO_COOLDOWN_SEC", "300"))
+_AUTO_GROQ_ONLY = os.getenv("LUNA_VISION_AUTO_GROQ_ONLY", "1") == "1"
+_auto_thread = None
+_auto_stop = threading.Event()
+_last_hash = None
+_last_spoken_ts = 0.0
 
-_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-_GROQ_MODEL = os.getenv("LUNA_GROQ_MODEL", "llama-3.1-8b-instant")
+_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+_GROQ_MODEL = os.getenv("LUNA_GROQ_MODEL", "llama-3.1-8b-instant")
+_GROQ_VISION_MODEL = os.getenv(
+    "LUNA_GROQ_VISION_MODEL",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+)
 _BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 _CAPTURA_DIR = os.path.join(_BASE_DIR, "data", "capturas")
 _ULTIMA_CAPTURA_PATH = os.path.join(_CAPTURA_DIR, "ultima_captura.png")
@@ -66,16 +76,16 @@ def inicializar():
 # FUNCAO PRINCIPAL
 # ========================================
 
-def executar(comando: str) -> str:
-    cmd = (comando or "").strip()
-    cmd_lower = cmd.lower()
-
-    if _eh_comando_auto_start(cmd_lower):
-        return _iniciar_visao_automatica()
-    if _eh_comando_auto_stop(cmd_lower):
-        return _parar_visao_automatica()
-
-    return analisar_tela(cmd)
+def executar(comando: str) -> str:
+    cmd = (comando or "").strip()
+    cmd_lower = cmd.lower()
+
+    if _eh_comando_auto_start(cmd_lower):
+        return _iniciar_visao_automatica()
+    if _eh_comando_auto_stop(cmd_lower):
+        return _parar_visao_automatica()
+
+    return analisar_tela(cmd)
 
 
 def analisar_tela(cmd: str) -> str:
@@ -95,7 +105,7 @@ def analisar_tela(cmd: str) -> str:
         else:
             image_path = _capturar_tela(cmd)
             _persistir_ultima_captura(image_path)
-        return _analisar_imagem_e_reagir(image_path, cmd)
+        return _analisar_imagem_e_reagir(image_path, cmd, usar_groq=False)
     except Exception as e:
         print(f"ERRO NA VISAO: {e}")
         return "Tive um problema ao analisar a tela."
@@ -110,82 +120,149 @@ def analisar_tela(cmd: str) -> str:
 # MODO AUTOMATICO
 # ========================================
 
-def _iniciar_visao_automatica() -> str:
-    global _auto_thread
-    if _auto_thread and _auto_thread.is_alive():
-        return "Visao automatica ja esta ativa."
-    _auto_stop.clear()
-    _auto_thread = threading.Thread(target=_loop_automatico, daemon=True)
-    _auto_thread.start()
-    return f"Visao automatica ativada. Vou reagir a cada {_AUTO_INTERVAL_SEC:.0f}s quando a cena mudar."
+def _iniciar_visao_automatica() -> str:
+    global _auto_thread
+    if _auto_thread and _auto_thread.is_alive():
+        return "Visao automatica ja esta ativa."
+    _auto_stop.clear()
+    _auto_thread = threading.Thread(target=_loop_automatico, daemon=True)
+    _auto_thread.start()
+    return (
+        "Visao automatica ativada. Vou reagir periodicamente "
+        f"(intervalo {_AUTO_INTERVAL_SEC:.0f}s, cooldown {_AUTO_COOLDOWN_SEC:.0f}s)."
+    )
 
 
-def _parar_visao_automatica() -> str:
-    _auto_stop.set()
-    return "Visao automatica desativada."
+def _parar_visao_automatica() -> str:
+    _auto_stop.set()
+    return "Visao automatica desativada."
+
+
+def iniciar_visao_automatica_sempre() -> None:
+    if not _AUTO_ENABLED:
+        return
+    _iniciar_visao_automatica()
+
+
+def get_visao_auto_status() -> dict:
+    agora = time.time()
+    cooldown_restante = max(0.0, _AUTO_COOLDOWN_SEC - (agora - _last_spoken_ts))
+    return {
+        "enabled": _AUTO_ENABLED,
+        "interval_sec": _AUTO_INTERVAL_SEC,
+        "cooldown_sec": _AUTO_COOLDOWN_SEC,
+        "cooldown_restante": cooldown_restante,
+        "ativo": bool(_auto_thread and _auto_thread.is_alive()),
+    }
 
 
-def _loop_automatico():
-    while not _auto_stop.is_set():
-        try:
-            resposta = _processar_automatico()
-            if resposta:
-                voice.falar(resposta)
-        except Exception as e:
-            print(f"ERRO NA VISAO AUTOMATICA: {e}")
-        time.sleep(_AUTO_INTERVAL_SEC)
+def _loop_automatico():
+    while not _auto_stop.is_set():
+        try:
+            resposta = _processar_automatico()
+            if resposta:
+                voice.falar(resposta)
+        except Exception as e:
+            print(f"ERRO NA VISAO AUTOMATICA: {e}")
+        time.sleep(_AUTO_INTERVAL_SEC)
 
 
-def _processar_automatico() -> str | None:
-    global _last_hash
-    image_path = None
-    try:
-        image_path = _capturar_tela("visao automatica")
-        atual_hash = _hash_arquivo(image_path)
-        if _last_hash == atual_hash:
-            return None
-        _last_hash = atual_hash
-        return _analisar_imagem_e_reagir(image_path, "visao automatica")
-    finally:
-        if image_path and os.path.exists(image_path):
-            try:
-                os.remove(image_path)
-            except Exception:
+def _processar_automatico() -> str | None:
+    global _last_hash, _last_spoken_ts
+    image_path = None
+    try:
+        agora = time.time()
+        # Respeita cooldown sempre, mesmo se a cena mudou
+        if (agora - _last_spoken_ts) < _AUTO_COOLDOWN_SEC:
+            return None
+
+        image_path = _capturar_tela("visao automatica")
+        atual_hash = _hash_arquivo(image_path)
+        mudou = _last_hash != atual_hash
+        if mudou:
+            _last_hash = atual_hash
+        # Quando o cooldown expira, fala mesmo que a cena nao tenha mudado.
+        resposta = _analisar_imagem_e_reagir(
+            image_path,
+            "visao automatica",
+            usar_groq=False,
+            permitir_gemini=True,
+        )
+        # inicia cooldown mesmo se a resposta vier vazia para evitar spam
+        _last_spoken_ts = agora
+        return resposta
+    finally:
+        if image_path and os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except Exception:
                 pass
 
 # ========================================
 # FLUXO DE ANALISE
 # ========================================
 
-def _analisar_imagem_e_reagir(image_path: str, cmd: str) -> str:
-    contexto = STATE.obter_contexto_curto()
-    cmd_lower = (cmd or "").lower()
-    detalhado = _pede_detalhe(cmd_lower)
-    foco = _extrair_foco(cmd_lower)
+def _analisar_imagem_e_reagir(
+    image_path: str,
+    cmd: str,
+    usar_groq: bool = False,
+    permitir_gemini: bool = True,
+    extra_prompt: str | None = None,
+    limitar_resposta: bool = True,
+) -> str:
+    contexto = STATE.obter_contexto_curto()
+    cmd_lower = (cmd or "").lower()
+    detalhado = _pede_detalhe(cmd_lower)
+    foco = _extrair_foco(cmd_lower)
+
+    prompt_analise = build_vision_analysis_prompt(contexto, cmd, foco)
+
+    analise = ""
+    if usar_groq:
+        try:
+            analise = _analisar_imagem_groq(image_path, prompt_analise).strip()
+        except Exception:
+            analise = ""
+    if not analise and permitir_gemini:
+        try:
+            analise = analisar_imagem(image_path, prompt_analise).strip()
+        except Exception:
+            analise = ""
+    if analise:
+        STATE.set_ultima_visao(analise)
 
-    prompt_analise = build_vision_analysis_prompt(contexto, cmd, foco)
+    prompt_opiniao = build_vision_opinion_prompt(cmd, analise, foco)
+    if extra_prompt:
+        prompt_opiniao = f"{prompt_opiniao}\n\n{extra_prompt}"
 
-    analise = analisar_imagem(image_path, prompt_analise).strip()
-    if analise:
-        STATE.set_ultima_visao(analise)
-
-    prompt_opiniao = build_vision_opinion_prompt(cmd, analise, foco)
-
-    try:
-        resposta = gerar_opiniao(prompt_opiniao).strip()
-    except Exception as e:
-        print(f"ERRO GEMINI OPINIAO: {e}")
-        resposta = _gerar_opiniao_groq(prompt_opiniao).strip()
+    resposta = ""
+    if usar_groq:
+        resposta = _gerar_opiniao_groq(prompt_opiniao).strip()
+    if not resposta and permitir_gemini:
+        try:
+            resposta = gerar_opiniao(prompt_opiniao).strip()
+        except Exception as e:
+            print(f"ERRO GEMINI OPINIAO: {e}")
+            resposta = ""
     if _precisa_reforco(resposta, detalhado):
         reforco = build_vision_opinion_reforco()
-        try:
-            resposta = gerar_opiniao(prompt_opiniao + "\n\n" + reforco).strip()
-        except Exception as e:
-            print(f"ERRO GEMINI OPINIAO: {e}")
-            resposta = _gerar_opiniao_groq(prompt_opiniao + "\n\n" + reforco).strip()
-    if not resposta:
-        return analise or "Nao consegui analisar a tela agora."
-    return _limitar_resposta(resposta)
+        resposta = ""
+        if usar_groq:
+            resposta = _gerar_opiniao_groq(prompt_opiniao + "\n\n" + reforco).strip()
+        if not resposta and permitir_gemini:
+            try:
+                resposta = gerar_opiniao(prompt_opiniao + "\n\n" + reforco).strip()
+            except Exception as e:
+                print(f"ERRO GEMINI OPINIAO: {e}")
+                resposta = ""
+    if not resposta:
+        return analise or "Nao consegui analisar a tela agora."
+    if not limitar_resposta:
+        texto = resposta.strip()
+        if texto and not texto.endswith((".", "!", "?")):
+            texto += "."
+        return texto
+    return _limitar_resposta(resposta)
 
 # ========================================
 # UTILITARIOS
@@ -353,7 +430,7 @@ def _normalizar_texto(texto: str) -> str:
         .decode("ascii")
     )
 
-def _limitar_resposta(resposta: str) -> str:
+def _limitar_resposta(resposta: str) -> str:
     texto = (resposta or "").strip()
     if not texto:
         return texto
@@ -369,7 +446,7 @@ def _limitar_resposta(resposta: str) -> str:
     return texto
 
 
-def _precisa_reforco(resposta: str, detalhado: bool) -> bool:
+def _precisa_reforco(resposta: str, detalhado: bool) -> bool:
     texto = (resposta or "").strip()
     if not texto:
         return True
@@ -378,17 +455,17 @@ def _precisa_reforco(resposta: str, detalhado: bool) -> bool:
     return False
 
 
-def _gerar_opiniao_groq(prompt: str) -> str:
+def _gerar_opiniao_groq(prompt: str) -> str:
     if not _GROQ_API_KEY:
         return ""
     texto, erro = _groq_chat(prompt, max_tokens=350, temperature=0.6)
     if erro:
         print(f"GROQ erro: {erro}")
         return ""
-    return texto
+    return texto
 
 
-def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> tuple[str, str]:
+def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> tuple[str, str]:
     headers = {
         "Authorization": f"Bearer {_GROQ_API_KEY}",
         "Content-Type": "application/json",
@@ -402,7 +479,7 @@ def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> tuple[str, s
         "max_tokens": max_tokens,
     }
     try:
-        resp = requests.post(
+        resp = SESSION.post(
             "https://api.groq.com/openai/v1/chat/completions",
             json=payload,
             headers=headers,
@@ -416,5 +493,55 @@ def _groq_chat(prompt: str, max_tokens: int, temperature: float) -> tuple[str, s
             return "", "empty_response"
         content = choices[0].get("message", {}).get("content", "").strip()
         return content, ""
-    except Exception as e:
-        return "", str(e)
+    except Exception as e:
+        return "", str(e)
+
+
+def _analisar_imagem_groq(image_path: str, prompt: str) -> str:
+    if not _GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY nao configurada.")
+    try:
+        img_b64 = base64.b64encode(open(image_path, "rb").read()).decode("ascii")
+    except Exception as e:
+        raise RuntimeError(f"Falha ao ler imagem: {e}")
+    data_url = f"data:image/jpeg;base64,{img_b64}"
+    payload = {
+        "model": _GROQ_VISION_MODEL,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": data_url},
+                ],
+            }
+        ],
+    }
+    try:
+        resp = SESSION.post(
+            "https://api.groq.com/openai/v1/responses",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {_GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"status_{resp.status_code}")
+        data = resp.json()
+        texto = data.get("output_text")
+        if not texto:
+            out = data.get("output", [])
+            for item in out:
+                for part in item.get("content", []):
+                    if part.get("type") == "output_text" and part.get("text"):
+                        texto = part["text"]
+                        break
+                if texto:
+                    break
+        if not texto:
+            raise RuntimeError("resposta_vazia")
+        return texto
+    except Exception as e:
+        raise RuntimeError(str(e))

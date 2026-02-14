@@ -21,13 +21,10 @@ except Exception:
     sf = None
 
 from config.env import init_env
+from core.http_client import SESSION
 from core.obs_client import update_text
 
 init_env()
-
-# Silencia logs verbosos do httpx/httpcore (usado pelo SDK da Groq).
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Configuracoes do reconhecedor
 rec = sr.Recognizer()
@@ -80,6 +77,7 @@ _MURF_RATE = _env_int("MURF_RATE", 15)
 _MURF_PITCH = _env_int("MURF_PITCH", 10)
 _MURF_SAMPLE_RATE = _env_int("MURF_SAMPLE_RATE", 24000)
 _MURF_CHANNEL_TYPE = os.getenv("MURF_CHANNEL_TYPE", "MONO").strip().upper()
+_LOG = logging.getLogger("Luna.TTS")
 
 
 
@@ -187,9 +185,10 @@ def _speak_murf(texto: str, start_ts: float | None = None):
     if not _MURF_API_KEY:
         raise RuntimeError("MURF_API_KEY nao definido")
 
-    print(f"[TTS MURF TEXTO]: {texto}")
-
     fmt = (_MURF_FORMAT or "MP3").upper()
+    if _AUDIO_DEVICE and fmt != "WAV":
+        fmt = "WAV"
+    t0 = time.perf_counter()
 
     if fmt == "WAV":
         path = None
@@ -200,7 +199,11 @@ def _speak_murf(texto: str, start_ts: float | None = None):
             path = _murf_save_audio(resp, fmt)
             _log_tts_duration("murf_resposta", t_headers - t0)
             _log_tts_delay(start_ts, "inicio_fala_murf")
+            t_play_start = time.perf_counter()
             _tocar_audio_arquivo(path, fmt)
+            t_play_end = time.perf_counter()
+            _LOG.info(f"TTS Murf recv {round(t_headers - t0, 2)}s", extra={"engine": "murf"})
+            _LOG.info(f"TTS Murf speak {round(t_play_end - t_play_start, 2)}s", extra={"engine": "murf"})
         finally:
             if path:
                 try:
@@ -232,20 +235,24 @@ def _speak_murf(texto: str, start_ts: float | None = None):
 
     try:
         t0 = time.perf_counter()
-        with requests.post(url, headers=headers, json=data, stream=True, timeout=30) as resp:
+        with SESSION.post(url, headers=headers, json=data, stream=True, timeout=30) as resp:
             if resp.status_code != 200:
                 raise RuntimeError(f"Murf erro: {resp.status_code}")
             t_headers = time.perf_counter()
-            t_download = _tocar_mp3_ffplay_stream(resp, start_ts)
+            t_play_start, t_play_end = _tocar_mp3_ffplay_stream(resp, start_ts)
         _log_tts_duration("murf_resposta", t_headers - t0)
-        _log_tts_duration("murf_total", t_download - t0)
+        if t_play_end:
+            _log_tts_duration("murf_total", t_play_end - t0)
+        _LOG.info(f"TTS Murf recv {round(t_headers - t0, 2)}s", extra={"engine": "murf"})
+        if t_play_start and t_play_end:
+            _LOG.info(f"TTS Murf speak {round(t_play_end - t_play_start, 2)}s", extra={"engine": "murf"})
     except Exception:
         # Fallback para arquivo local se streaming falhar.
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
             path = tmp.name
         try:
             t0 = time.perf_counter()
-            with requests.post(url, headers=headers, json=data, stream=True, timeout=30) as resp:
+            with SESSION.post(url, headers=headers, json=data, stream=True, timeout=30) as resp:
                 if resp.status_code != 200:
                     raise RuntimeError(f"Murf erro: {resp.status_code}")
                 t_headers = time.perf_counter()
@@ -258,7 +265,11 @@ def _speak_murf(texto: str, start_ts: float | None = None):
             _log_tts_duration("murf_download", t_download - t_headers)
             _log_tts_duration("murf_total", t_download - t0)
             _log_tts_delay(start_ts, "inicio_fala_murf")
+            t_play_start = time.perf_counter()
             _tocar_mp3_ffplay(path)
+            t_play_end = time.perf_counter()
+            _LOG.info(f"TTS Murf recv {round(t_headers - t0, 2)}s", extra={"engine": "murf"})
+            _LOG.info(f"TTS Murf speak {round(t_play_end - t_play_start, 2)}s", extra={"engine": "murf"})
         finally:
             try:
                 os.remove(path)
@@ -288,6 +299,16 @@ def _resolver_dispositivo_audio():
         devices = sd.query_devices()
     except Exception:
         return None
+    target_raw = _AUDIO_DEVICE.strip()
+    try:
+        if target_raw.isdigit():
+            idx = int(target_raw)
+            if 0 <= idx < len(devices):
+                dev = devices[idx]
+                if dev.get("max_output_channels", 0) > 0:
+                    return idx
+    except Exception:
+        pass
     target = _AUDIO_DEVICE.lower()
     for idx, dev in enumerate(devices):
         name = str(dev.get("name", "")).lower()
@@ -307,7 +328,7 @@ def _tocar_mp3_ffplay(path: str):
     )
 
 
-def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
+def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> tuple[float | None, float]:
     if _FFPLAY_PATH and os.path.isfile(_FFPLAY_PATH):
         cmd = [_FFPLAY_PATH, "-nodisp", "-autoexit", "-loglevel", "error", "-i", "pipe:0"]
     else:
@@ -319,6 +340,7 @@ def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
         stderr=subprocess.DEVNULL,
     )
     started = False
+    play_start: float | None = None
     try:
         for chunk in resp.iter_content(chunk_size=4096):
             if not chunk:
@@ -328,6 +350,7 @@ def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
             proc.stdin.write(chunk)
             if not started:
                 started = True
+                play_start = time.perf_counter()
                 _log_tts_delay(start_ts, "inicio_fala_murf")
         if proc.stdin:
             proc.stdin.close()
@@ -337,7 +360,7 @@ def _tocar_mp3_ffplay_stream(resp, start_ts: float | None = None) -> float:
             proc.stdin.close()
         if proc.poll() is None:
             proc.kill()
-    return time.perf_counter()
+    return play_start, time.perf_counter()
 
 
 def _tocar_audio_arquivo(path: str, fmt: str) -> None:
@@ -352,9 +375,12 @@ def _tocar_audio_arquivo(path: str, fmt: str) -> None:
                         "Dispositivo de audio '%s' nao encontrado. Usando padrao.",
                         _AUDIO_DEVICE,
                     )
-                sd.play(data, samplerate, device=device)
-                sd.wait()
-                return
+                try:
+                    sd.play(data, samplerate, device=device)
+                    sd.wait()
+                    return
+                except Exception as e:
+                    logging.warning("Falha ao tocar WAV via sounddevice: %s", e)
             except Exception as e:
                 logging.warning("Falha ao tocar WAV via sounddevice: %s", e)
         try:
@@ -380,7 +406,7 @@ def _murf_generate_audio(texto: str, fmt: str) -> dict:
         payload["style"] = _MURF_STYLE
     if _MURF_LOCALE:
         payload["multiNativeLocale"] = _MURF_LOCALE
-    r = requests.post(url, headers=headers, json=payload, timeout=120)
+    r = SESSION.post(url, headers=headers, json=payload, timeout=120)
     if r.status_code >= 400:
         raise RuntimeError(f"Murf HTTP {r.status_code}: {r.text[:200]}")
     return r.json()
@@ -399,7 +425,7 @@ def _murf_save_audio(resp: dict, fmt: str) -> str:
 
     url = resp.get("audioFile") or resp.get("audioUrl")
     if url:
-        ar = requests.get(url, timeout=120)
+        ar = SESSION.get(url, timeout=120)
         ar.raise_for_status()
         with open(path, "wb") as f:
             f.write(ar.content)

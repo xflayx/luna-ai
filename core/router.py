@@ -1,13 +1,34 @@
 import importlib
 import logging
 import os
+import time
 from typing import Optional
 
 from config.state import STATE
 from core.intent import detectar_intencao
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Router")
+
+_RETRY_ATTEMPTS = int(os.getenv("LUNA_RETRY_ATTEMPTS", "2"))
+_RETRY_BACKOFF = float(os.getenv("LUNA_RETRY_BACKOFF", "0.4"))
+
+
+def _with_retry(func, *args, **kwargs):
+    last_exc = None
+    for tentativa in range(1, _RETRY_ATTEMPTS + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "Erro na execucao, tentativa %s/%s",
+                tentativa,
+                _RETRY_ATTEMPTS,
+            )
+            if tentativa < _RETRY_ATTEMPTS:
+                time.sleep(_RETRY_BACKOFF * tentativa)
+    if last_exc:
+        raise last_exc
 
 
 class RouterLuna:
@@ -122,7 +143,8 @@ class RouterLuna:
                 if not skill:
                     continue
                 try:
-                    resp = skill.executar(cmd_limpo)
+                    logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
+                    resp = _with_retry(skill.executar, cmd_limpo)
                     if resp:
                         STATE.adicionar_ao_historico(cmd_limpo, resp)
                     return resp
@@ -136,7 +158,8 @@ class RouterLuna:
             info = getattr(skill, "SKILL_INFO", {})
             if intent in info.get("intents", []):
                 try:
-                    resp = skill.executar(cmd_limpo)
+                    logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
+                    resp = _with_retry(skill.executar, cmd_limpo)
                     if resp:
                         STATE.adicionar_ao_historico(cmd_limpo, resp)
                     return resp
@@ -149,7 +172,8 @@ class RouterLuna:
                 continue
             if any(g in cmd_limpo for g in skill.GATILHOS):
                 try:
-                    resp = skill.executar(cmd_limpo)
+                    logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
+                    resp = _with_retry(skill.executar, cmd_limpo)
                     if resp:
                         STATE.adicionar_ao_historico(cmd_limpo, resp)
                     return resp
