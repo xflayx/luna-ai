@@ -20,6 +20,7 @@ Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa LLMs
 - Historico persistente em `memory/chat_history.json`
 - Legendas no OBS via WebSocket v5
 - Painel realtime (Flask + Socket.IO)
+- Pet desktop (Electron + backend Python local via WebSocket)
 
 ## Skills (habilidades)
 - conversa: chat principal com personalidade
@@ -43,6 +44,17 @@ Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa LLMs
 pip install -r requirements.txt
 playwright install chromium
 ```
+
+### Pet desktop (opcional)
+```bash
+cd app
+npm install
+npm start
+```
+
+Notas do pet:
+- O pet usa `app/backend/server.py` (FastAPI + WebSocket local em `127.0.0.1`).
+- O pet nao depende de Flet (implementacao Flet foi removida).
 
 Notas:
 - No Windows, o pyaudio pode exigir instalacao extra:
@@ -91,6 +103,21 @@ MURF_CHANNEL_TYPE=MONO
 MURF_BASE_URL=https://api.murf.ai
 MURF_STREAM_URL=https://global.api.murf.ai/v1/speech/stream
 LUNA_FFPLAY_PATH=...
+
+# Pet TTS (somente pet, sem afetar a Luna principal)
+LUNA_PET_TTS_ENABLED=1
+LUNA_PET_TTS_PROVIDER=murf
+LUNA_PET_FALAR=0
+LUNA_PET_TTS_FORMAT=WAV
+LUNA_PET_MURF_VOICE=pt-BR-isadora
+LUNA_PET_MURF_STYLE=Conversational
+LUNA_PET_MURF_LOCALE=pt-BR
+LUNA_PET_MURF_MODEL=FALCON
+LUNA_PET_MURF_RATE=15
+LUNA_PET_MURF_PITCH=10
+LUNA_PET_MURF_SAMPLE_RATE=24000
+LUNA_PET_MURF_CHANNEL_TYPE=MONO
+LUNA_PET_TTS_TIMEOUT=120
 
 # memoria curta
 LUNA_MEM_LENGTH=2

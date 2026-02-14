@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; media-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src 'self' ws://127.0.0.1:*"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Luna Desk Pet</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="mini-orb" id="mini-orb" style="display: none;">
+      <div class="mini-drag drag-region" title="Arraste aqui"></div>
+      <video
+        class="mini-orb-avatar"
+        id="mini-orb-video"
+        autoplay
+        muted
+        loop
+        playsinline
+        src="assets/idle.mp4"
+      ></video>
+      <button class="mini-expand-btn" id="mini-expand-btn" title="Expandir">+</button>
+      <div class="mini-pulse"></div>
+    </div>
+
+    <div class="widget-container" id="widget-container">
+      <div class="window-topbar drag-region">
+        <div class="window-title">Luna</div>
+        <div class="window-actions no-drag">
+          <button id="minimize-btn" class="top-btn" title="Minimizar">-</button>
+          <button id="close-btn" class="top-btn close-btn" title="Fechar">x</button>
+        </div>
+      </div>
+
+      <button id="preview-box" class="preview-box no-drag" title="Abrir conversa completa">
+        <span id="preview-text">Conversa completa</span>
+      </button>
+
+      <div class="status-hint" id="status-hint"></div>
+
+      <div class="lobster-area" id="lobster-area">
+        <video
+          class="lobster-character"
+          id="lobster-char"
+          autoplay
+          muted
+          loop
+          playsinline
+          src="assets/idle.mp4"
+        ></video>
+      </div>
+
+      <div class="bottom-bar">
+        <div class="state-indicator" id="state-indicator">
+          <span class="state-dot" id="state-dot"></span>
+          <span class="state-text" id="state-text">idle</span>
+        </div>
+        <div class="widget-controls"></div>
+      </div>
+
+      <div class="text-input-area" id="text-input-area">
+        <input
+          type="text"
+          id="text-input"
+          class="text-input"
+          placeholder="Digite uma mensagem ou cole um link..."
+        />
+        <button id="send-btn" class="send-btn" title="Enviar">></button>
+      </div>
+    </div>
+
+    <div class="full-chat-modal hidden" id="full-chat-modal">
+      <div class="full-chat-card">
+        <div class="full-chat-header drag-region">
+          <span>Conversa</span>
+          <button id="full-chat-close" class="top-btn no-drag" title="Fechar conversa">x</button>
+        </div>
+        <div class="full-chat-log no-drag" id="full-chat-log"></div>
+      </div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

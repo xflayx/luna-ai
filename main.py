@@ -70,7 +70,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 caminho_menu = os.path.join(BASE_DIR, "interface", "radial_menu_eel.py")
 processo_menu = None
 
-if os.path.exists(caminho_menu):
+if os.getenv("LUNA_RADIAL_MENU_ENABLED", "1") == "1" and os.path.exists(caminho_menu):
     try:
         flags = 0
         if sys.platform == "win32":

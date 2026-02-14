@@ -50,6 +50,10 @@ pytest-mock==3.15.1
 Flask==3.0.3
 Flask-SocketIO==5.3.6
 
+# --- PET BACKEND (Electron bridge) ---
+fastapi==0.115.6
+uvicorn==0.32.1
+
 # --- OBS WebSocket (v5) ---
 obsws-python==1.1.1
 

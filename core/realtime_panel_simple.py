@@ -31,6 +31,22 @@ def _panel_token() -> str:
     return os.getenv("LUNA_PANEL_TOKEN", "").strip()
 
 
+def _token_ok(request) -> bool:
+    required = _panel_token()
+    if not required:
+        return True
+    token = (request.headers.get("X-Panel-Token", "") or "").strip()
+    if not token:
+        token = (request.args.get("token", "") or "").strip()
+    if not token:
+        try:
+            body = request.get_json(silent=True) or {}
+            token = (body.get("token") or "").strip()
+        except Exception:
+            token = ""
+    return token == required
+
+
 def _build_state(
     last_command: str | None = None,
     last_intent: str | None = None,
@@ -144,6 +160,9 @@ def _handle_control(data: Dict[str, Any]) -> Dict[str, Any]:
         cmd = (payload.get("comando") or "").strip()
         if not cmd:
             return {"ok": False, "msg": "Comando vazio."}
+        source = (payload.get("source") or "").strip().lower()
+        falar_flag = bool(payload.get("falar"))
+        print(f"[PAINEL] Origem={source or 'desconhecida'} falar={falar_flag}")
         print(f"[PAINEL] Comando recebido: {cmd}")
         try:
             from core.realtime_panel import atualizar_estado
@@ -156,7 +175,10 @@ def _handle_control(data: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
         resp = processar_comando(cmd, None) or ""
-        if payload.get("falar"):
+        if resp:
+            print(f"[PAINEL] Resposta: {resp}")
+        # Comandos vindos do pet nunca devem disparar TTS do backend aqui.
+        if falar_flag and source != "pet":
             falar(resp)
         return {"ok": True, "msg": "Comando executado.", "resposta": resp}
 
@@ -257,6 +279,24 @@ def iniciar_painel() -> None:
                 "enabled": _panel_enabled(),
             },
         }
+
+    @app.post("/control")
+    def control_api():
+        if not _token_ok(request):
+            return {"ok": False, "msg": "token invalido"}, 401
+        data = request.get_json(silent=True) or {}
+        resultado = _handle_control(data)
+        try:
+            atualizar_estado(status=resultado.get("msg", ""))
+        except Exception:
+            pass
+        return resultado
+
+    @app.get("/state")
+    def state_api():
+        if not _token_ok(request):
+            return {"ok": False, "msg": "token invalido"}, 401
+        return _last_state or _build_state()
 
     @socketio.on("connect")
     def on_connect():

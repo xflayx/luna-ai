@@ -1,0 +1,13 @@
+{
+  "name": "luna-deskpet",
+  "version": "0.1.0",
+  "description": "Desk pet / VTuber widget (Electron + Python backend)",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.2"
+  }
+}
