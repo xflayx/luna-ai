@@ -1,0 +1,31 @@
+{
+  "id": "atalhos_radial",
+  "name": "Atalhos Radial",
+  "description": "Abre o menu radial de atalhos via arquivo de sinal.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "automation",
+  "intents": [
+    "atalhos_radial"
+  ],
+  "gatilhos": [
+    "menu",
+    "abrir menu",
+    "atalhos",
+    "radial"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando textual para abrir o menu."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Status da acao de abertura do menu."
+    }
+  ]
+}

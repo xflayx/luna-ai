@@ -1,0 +1,41 @@
+{
+  "id": "youtube_summary",
+  "name": "YouTube Summary",
+  "description": "Resume videos do YouTube com base em legendas/transcricao.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "media",
+  "intents": [
+    "youtube_summary"
+  ],
+  "gatilhos": [
+    "youtube",
+    "yt",
+    "video",
+    "resuma video",
+    "resumir video",
+    "resumo do video"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando com URL opcional do video."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resumo final do video."
+    }
+  ],
+  "config": {
+    "model": {
+      "type": "string",
+      "label": "Modelo LLM",
+      "description": "Modelo usado para resumir a transcricao.",
+      "default": "llama-3.1-8b-instant"
+    }
+  }
+}

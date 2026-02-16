@@ -5,8 +5,10 @@ import ipaddress
 import time
 import base64
 import sys
+import socket
+import hmac
+import secrets
 from urllib.parse import urlparse
-import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
@@ -18,6 +20,7 @@ try:
     init_env()
 except Exception:
     pass
+from core.http_client import SESSION
 
 
 def _env_int(name: str, default: int) -> int:
@@ -30,6 +33,13 @@ def _env_int(name: str, default: int) -> int:
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name, str(int(default))).strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except Exception:
+        return default
 
 
 def _log(msg: str) -> None:
@@ -70,7 +80,10 @@ def _guess_audio_mime_from_b64(raw: str) -> tuple[str, int]:
 
 HOST = os.environ.get("BACKEND_HOST", "127.0.0.1")
 PORT = _env_int("BACKEND_PORT", 18080)
-TOKEN = os.environ.get("BACKEND_TOKEN", "")
+TOKEN = os.environ.get("BACKEND_TOKEN", "").strip()
+if not TOKEN:
+    TOKEN = secrets.token_urlsafe(32)
+    _log("[PET SEC] BACKEND_TOKEN ausente; token efemero gerado.")
 LUNA_PANEL_HOST = os.environ.get("LUNA_PANEL_HOST", "127.0.0.1")
 LUNA_PANEL_PORT = _env_int("LUNA_PANEL_PORT", 5055)
 LUNA_PANEL_TOKEN = os.environ.get("LUNA_PANEL_TOKEN", "").strip()
@@ -109,7 +122,11 @@ MURF_CHANNEL_TYPE = (
 )
 MURF_TIMEOUT = _env_int("LUNA_PET_TTS_TIMEOUT", 120)
 
-MAX_MSG = 16000
+MAX_MSG = _env_int("LUNA_WS_MAX_MSG_BYTES", 16000)
+MAX_WS_MESSAGES_PER_MIN = _env_int("LUNA_WS_MAX_MESSAGES_PER_MIN", 30)
+MAX_URL_FETCH_BYTES = _env_int("LUNA_URL_FETCH_MAX_BYTES", 256000)
+STREAM_CHUNK_CHARS = max(8, _env_int("LUNA_WS_STREAM_CHUNK_CHARS", 24))
+STREAM_CHUNK_DELAY_SEC = max(0.0, _env_float("LUNA_WS_STREAM_DELAY_SEC", 0.002))
 
 app = FastAPI()
 
@@ -133,6 +150,25 @@ def _is_private_host(host: str) -> bool:
         return False
 
 
+def _resolve_host_ips(host: str) -> list[str]:
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        return []
+    ips: list[str] = []
+    for info in infos:
+        ip = info[4][0]
+        if ip and ip not in ips:
+            ips.append(ip)
+    return ips
+
+
+def _host_targets_private_network(host: str) -> bool:
+    if _is_private_host(host):
+        return True
+    return any(_is_private_host(ip) for ip in _resolve_host_ips(host))
+
+
 def _validate_url(url: str) -> str | None:
     try:
         parsed = urlparse(url)
@@ -143,7 +179,9 @@ def _validate_url(url: str) -> str | None:
     host = parsed.hostname or ""
     if not host:
         return None
-    if _is_private_host(host):
+    if parsed.username or parsed.password:
+        return None
+    if _host_targets_private_network(host):
         return None
     return url
 
@@ -153,16 +191,37 @@ def _fetch_url_summary(url: str) -> str:
     if not safe:
         return "URL invalida ou bloqueada."
     try:
-        resp = requests.get(
+        with SESSION.get(
             safe,
             timeout=8,
             headers={"User-Agent": "LunaDeskPet/1.0"},
             stream=True,
-        )
-        if resp.status_code >= 400:
-            return f"Falha ao acessar ({resp.status_code})."
-        content = resp.text
-        return f"Resumo basico: pagina com {len(content)} caracteres."
+            allow_redirects=False,
+        ) as resp:
+            if resp.status_code >= 400:
+                return f"Falha ao acessar ({resp.status_code})."
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            if (
+                "text/" not in content_type
+                and "json" not in content_type
+                and "xml" not in content_type
+                and "html" not in content_type
+            ):
+                return "Conteudo nao textual."
+            raw = bytearray()
+            for chunk in resp.iter_content(chunk_size=4096):
+                if not chunk:
+                    continue
+                remaining = MAX_URL_FETCH_BYTES - len(raw)
+                if remaining <= 0:
+                    break
+                raw.extend(chunk[:remaining])
+            try:
+                content = raw.decode(resp.encoding or "utf-8", errors="replace")
+            except LookupError:
+                content = raw.decode("utf-8", errors="replace")
+            sufixo = " (truncado)" if len(raw) >= MAX_URL_FETCH_BYTES else ""
+            return f"Resumo basico: pagina com {len(content)} caracteres{sufixo}."
     except Exception as e:
         return f"Erro ao acessar: {e}"
 
@@ -189,7 +248,7 @@ def _get_luna_state() -> dict:
     if LUNA_PANEL_TOKEN:
         headers["X-Panel-Token"] = LUNA_PANEL_TOKEN
     try:
-        resp = requests.get(url, headers=headers, timeout=8)
+        resp = SESSION.get(url, headers=headers, timeout=8)
         if resp.status_code != 200:
             return {}
         data = resp.json()
@@ -274,7 +333,7 @@ def _ask_luna(text: str) -> str:
     }
 
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=LUNA_COMMAND_TIMEOUT)
+        resp = SESSION.post(url, json=payload, headers=headers, timeout=LUNA_COMMAND_TIMEOUT)
     except Exception as e:
         return f"Nao consegui conectar na Luna ({e})."
 
@@ -310,7 +369,7 @@ def _falar_luna(text: str) -> None:
         },
     }
     try:
-        requests.post(url, json=payload, headers=headers, timeout=45)
+        SESSION.post(url, json=payload, headers=headers, timeout=45)
     except Exception:
         pass
 
@@ -356,7 +415,7 @@ def _murf_tts_base64(text: str) -> tuple[str, str]:
         payload["channelType"] = MURF_CHANNEL_TYPE
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=MURF_TIMEOUT)
+        resp = SESSION.post(url, headers=headers, json=payload, timeout=MURF_TIMEOUT)
     except Exception as exc:
         return "", f"Falha no Murf: {exc}"
 
@@ -379,7 +438,7 @@ def _murf_tts_base64(text: str) -> tuple[str, str]:
     if not audio_url:
         return "", "Murf retornou sem audio."
     try:
-        raw = requests.get(audio_url, timeout=45)
+        raw = SESSION.get(audio_url, timeout=45)
         if raw.status_code >= 400:
             return "", f"Falha ao baixar audio Murf ({raw.status_code})"
         return base64.b64encode(raw.content).decode("ascii"), ""
@@ -405,7 +464,7 @@ def _murf_tts_stream_base64(text: str, reason: str = "") -> tuple[str, str]:
         "channelType": MURF_CHANNEL_TYPE or "MONO",
     }
     try:
-        with requests.post(
+        with SESSION.post(
             MURF_STREAM_URL,
             headers=headers,
             json=payload,
@@ -450,9 +509,12 @@ def _build_pet_audio_event(text: str) -> tuple[dict | None, str]:
 
 
 async def _stream_text(ws: WebSocket, text: str):
-    for ch in text:
-        await ws.send_text(json.dumps({"type": "delta", "text": ch}))
-        await asyncio.sleep(0.004)
+    texto = text or ""
+    for i in range(0, len(texto), STREAM_CHUNK_CHARS):
+        chunk = texto[i:i + STREAM_CHUNK_CHARS]
+        await ws.send_text(json.dumps({"type": "delta", "text": chunk}))
+        if STREAM_CHUNK_DELAY_SEC:
+            await asyncio.sleep(STREAM_CHUNK_DELAY_SEC)
     await ws.send_text(json.dumps({"type": "done"}))
 
 
@@ -462,7 +524,8 @@ async def ws_endpoint(ws: WebSocket):
     try:
         raw = await asyncio.wait_for(ws.receive_text(), timeout=5)
         msg = json.loads(raw)
-        if msg.get("type") != "auth" or msg.get("token") != TOKEN:
+        token = str(msg.get("token") or "")
+        if msg.get("type") != "auth" or not hmac.compare_digest(token, TOKEN):
             await ws.close(code=1008)
             return
     except Exception:
@@ -472,12 +535,27 @@ async def ws_endpoint(ws: WebSocket):
     await ws.send_text(json.dumps({"type": "state", "value": "idle"}))
 
     try:
+        window_start = time.monotonic()
+        msg_count = 0
         while True:
             raw = await ws.receive_text()
+            now = time.monotonic()
+            if now - window_start >= 60:
+                window_start = now
+                msg_count = 0
+            msg_count += 1
+            if msg_count > MAX_WS_MESSAGES_PER_MIN:
+                await ws.send_text(json.dumps({"type": "error", "message": "rate_limited"}))
+                await ws.close(code=1013)
+                return
             if len(raw) > MAX_MSG:
                 await ws.close(code=1009)
                 return
-            data = json.loads(raw)
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                await ws.send_text(json.dumps({"type": "error", "message": "invalid_json"}))
+                continue
             if data.get("type") != "user_message":
                 continue
             text = (data.get("text") or "").strip()

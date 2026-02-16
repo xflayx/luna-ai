@@ -1,0 +1,22 @@
+{
+  "id": "chat_membership_obs_source",
+  "name": "Chat Membership -> OBS Source Toggle",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "obs-source-toggle",
+      "config": {
+        "sceneName": "Principal",
+        "sourceName": "BadgeMembership",
+        "enabled": true
+      },
+      "event_filters": [
+        {
+          "event": "chat.message.membership",
+          "condition": "True"
+        }
+      ]
+    }
+  ],
+  "connections": []
+}

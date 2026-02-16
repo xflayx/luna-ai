@@ -1,0 +1,35 @@
+{
+  "id": "sequencia_manager",
+  "name": "Sequencia Manager",
+  "description": "Grava, salva e executa sequencias de teclado e mouse.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "automation",
+  "intents": [
+    "sequencia_manager"
+  ],
+  "gatilhos": [
+    "sequencia",
+    "macro",
+    "gravar",
+    "parar gravacao",
+    "pare gravacao",
+    "executar sequencia",
+    "rodar sequencia",
+    "salvar sequencia"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando para gravar/parar/executar sequencia."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Status da gravacao/salvamento/execucao."
+    }
+  ]
+}

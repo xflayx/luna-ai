@@ -1,0 +1,18 @@
+{
+  "id": "chat_system_monitor",
+  "name": "Chat -> System Monitor",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "skill:system_monitor",
+      "config": {},
+      "event_filters": [
+        {
+          "event": "chat.*",
+          "condition": "event.get('text', '') != ''"
+        }
+      ]
+    }
+  ],
+  "connections": []
+}

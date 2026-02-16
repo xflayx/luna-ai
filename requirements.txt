@@ -1,81 +1,66 @@
 # ============================================
-# LUNA AI - REQUIREMENTS.TXT
+# LUNA AI - requirements.txt
 # ============================================
 
-# --- CORE / ESSENCIAIS ---
-python-dotenv==1.0.0
+# Core
+python-dotenv==1.0.1
 PyYAML==6.0.3
+requests==2.32.3
+urllib3==2.6.3
 
-# --- VOZ (Speech Recognition & TTS) ---
+# Voz / Audio
 SpeechRecognition==3.10.1
 pyttsx3==2.90
 pyaudio==0.2.14
 sounddevice==0.4.6
 soundfile==0.12.1
 faster-whisper==1.2.1
+webrtcvad==2.0.10
 
-# --- LLM / AI ---
+# LLM / AI
 google-genai==0.8.0
-# Groq SDK (STT/ASR)
 groq==1.0.0
 
-# --- INTERFACE / GUI ---
-Eel==0.16.0
+# Web / Scraping
+playwright==1.48.0
+beautifulsoup4==4.12.3
+yt-dlp==2025.12.8
 
-# --- AUTOMACAO ---
+# Interface / Automacao local
+Eel==0.16.0
 pyautogui==0.9.54
 pynput==1.7.7
 pyperclip==1.9.0
 
-# --- WEB SCRAPING ---
-playwright==1.48.0
-requests==2.32.3
-beautifulsoup4==4.12.3
-yt-dlp==2025.12.8
+# Opcional para PTT via gamepad (metodo "gamepad")
+inputs==0.5
 
-# --- IMAGENS ---
+# Imagem / Sistema
 Pillow==10.4.0
-
-# --- SISTEMA ---
 psutil==6.1.0
 
-# --- VAD (VOICE ACTIVITY DETECTION) ---
-webrtcvad==2.0.10
-
-# --- TESTES ---
-pytest==9.0.2
-pytest-mock==3.15.1
-
-# --- PAINEL REALTIME ---
+# Painel realtime
 Flask==3.0.3
 Flask-SocketIO==5.3.6
 
-# --- PET BACKEND (Electron bridge) ---
-fastapi==0.115.6
-uvicorn==0.32.1
+# Pet backend (app/backend/server.py)
+fastapi==0.115.8
+uvicorn==0.34.0
 
-# --- OBS WebSocket (v5) ---
+# OBS
 obsws-python==1.1.1
 
-# --- DEPENDENCIAS IMPLICITAS (podem ser necessarias) ---
-# Estas sao instaladas automaticamente, mas listadas para clareza
-certifi==2026.1.4
-charset-normalizer==3.4.4
-idna==3.11
-urllib3==2.6.3
+# Testes
+pytest==9.0.2
+pytest-mock==3.15.1
 
 # ============================================
-# INSTALACAO:
-# pip install -r requirements.txt
+# POS-INSTALACAO
+# ============================================
+# playwright install chromium
+#
+# No Windows, pyaudio pode exigir:
+#   pip install pipwin
+#   pipwin install pyaudio
 # ============================================
 
-# NOTAS:
-# 1. pyaudio pode precisar de instalacao manual no Windows:
-#    pip install pipwin
-#    pipwin install pyaudio
-#
-# 2. Playwright precisa de instalacao dos browsers:
-#    playwright install chromium
-#
-# 3. Se usar conda/venv, ative o ambiente antes
-# ============================================

@@ -1,0 +1,37 @@
+{
+  "id": "web_reader",
+  "name": "Web Reader",
+  "description": "Le e resume o site aberto no navegador.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "web",
+  "intents": [
+    "web_reader"
+  ],
+  "gatilhos": [
+    "site",
+    "pagina",
+    "pagina web",
+    "link",
+    "url",
+    "leia",
+    "resuma",
+    "resumo",
+    "tweet",
+    "post"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando textual de leitura/resumo."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resumo textual do conteudo da pagina."
+    }
+  ]
+}

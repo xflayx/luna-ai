@@ -1,0 +1,42 @@
+{
+  "id": "vision",
+  "name": "Vision",
+  "description": "Analise de tela e reanalise da ultima captura",
+  "version": "1.1.0",
+  "author": "Luna Team",
+  "category": "vision",
+  "intents": [
+    "vision",
+    "visao"
+  ],
+  "gatilhos": [
+    "analise",
+    "veja",
+    "olhe",
+    "tela",
+    "visao automatica",
+    "modo automatico"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando textual com foco opcional"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Descricao/opiniao gerada"
+    }
+  ],
+  "config": {
+    "auto_enabled": {
+      "type": "boolean",
+      "label": "Visao automatica",
+      "description": "Ativa analise automatica periodica",
+      "default": true
+    }
+  }
+}

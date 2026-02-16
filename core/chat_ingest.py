@@ -5,11 +5,13 @@ import re
 import socket
 import threading
 import time
-from typing import Optional
+import logging
+from typing import Optional, Any
 
 import requests
 
 from config.env import init_env
+from core.event_bus import emit_event
 from core.http_client import SESSION
 from core import memory
 from core import voice
@@ -19,6 +21,17 @@ _COMMON_SHORT_WORDS = {
     "oi", "ola", "ok", "sim", "nao", "bom", "boa", "tudo", "top", "vale",
     "show", "blz", "beleza", "certo", "claro", "vai", "vem", "fala",
 }
+
+_YT_EVENT_KIND_MAP = {
+    "textMessageEvent": "message",
+    "superChatEvent": "superchat",
+    "superStickerEvent": "supersticker",
+    "newSponsorEvent": "membership",
+    "memberMilestoneChatEvent": "membership_milestone",
+    "membershipGiftPurchaseEvent": "membership_gift_purchase",
+    "membershipGiftRedemptionEvent": "membership_gift_redemption",
+}
+logger = logging.getLogger("ChatIngest")
 
 init_env()
 
@@ -61,14 +74,56 @@ def _is_enabled(env_key: str) -> bool:
     return os.getenv(env_key, "0").strip() == "1"
 
 
-def _store_chat(platform: str, user: str, text: str) -> None:
+def _store_chat(
+    platform: str,
+    user: str,
+    text: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+    message_kind: str = "message",
+) -> None:
     msg = (text or "").strip()
-    if not msg:
-        return
     user = (user or "").strip() or "anon"
-    payload = f"[{platform}/{user}]: {msg}"
-    memory.adicionar_memoria_curta(payload, origem=f"chat_{platform}")
-    _enqueue_reply(platform, user, msg)
+    kind = (message_kind or "message").strip().lower() or "message"
+    meta = dict(metadata or {})
+    payload = f"[{platform}/{user}]: {msg}" if msg else f"[{platform}/{user}]"
+
+    if msg:
+        memory.adicionar_memoria_curta(payload, origem=f"chat_{platform}")
+
+    event_payload = {
+        "platform": platform,
+        "user": user,
+        "text": msg,
+        "payload": payload,
+        "kind": kind,
+        "metadata": meta,
+    }
+    _emit_chat_events(platform, kind, event_payload)
+
+    if msg and kind == "message":
+        _enqueue_reply(platform, user, msg)
+
+
+def _emit_chat_events(platform: str, kind: str, payload: dict[str, Any]) -> None:
+    source = f"chat_ingest:{platform}"
+    emit_event("chat.message", payload, source=source)
+    emit_event("chat.message.received", payload, source=source)
+    emit_event(f"chat.{platform}.message.received", payload, source=source)
+    emit_event("message.received", payload, source=source)
+
+    if kind and kind != "message":
+        emit_event(f"chat.message.{kind}", payload, source=source)
+        emit_event(f"chat.{platform}.{kind}", payload, source=source)
+        emit_event(f"message.{kind}", payload, source=source)
+
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    if metadata.get("is_mod"):
+        emit_event("chat.message.mod", payload, source=source)
+    if metadata.get("is_member"):
+        emit_event("chat.message.member", payload, source=source)
+    if metadata.get("is_subscriber"):
+        emit_event("chat.message.subscriber", payload, source=source)
 
 
 def _enqueue_reply(platform: str, user: str, text: str) -> None:
@@ -116,8 +171,10 @@ def _twitch_loop() -> None:
 
     nick_norm = nick.lower()
     while not _stop_event.is_set():
+        sock = None
         try:
             sock = socket.socket()
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             sock.connect(("irc.chat.twitch.tv", 6667))
             sock.send(f"PASS {oauth}\r\n".encode("utf-8"))
             sock.send(f"NICK {nick}\r\n".encode("utf-8"))
@@ -130,6 +187,10 @@ def _twitch_loop() -> None:
                     data = sock.recv(2048).decode("utf-8", errors="ignore")
                 except socket.timeout:
                     continue
+                except OSError as e:
+                    if _is_twitch_reset_error(e):
+                        break
+                    raise
                 if not data:
                     break
                 buffer += data
@@ -138,33 +199,97 @@ def _twitch_loop() -> None:
                     if line.startswith("PING"):
                         sock.send("PONG :tmi.twitch.tv\r\n".encode("utf-8"))
                         continue
-                    user, msg = _parse_twitch_privmsg(line)
-                    if user and msg:
+                    user, msg, meta = _parse_twitch_privmsg(line)
+                    kind = str(meta.get("kind", "message")).strip().lower() or "message"
+                    if user and (msg or kind != "message"):
                         if user.lower() == nick_norm:
                             continue
-                        _store_chat("twitch", user, msg)
+                        _store_chat(
+                            "twitch",
+                            user,
+                            msg or "",
+                            metadata=meta,
+                            message_kind=kind,
+                        )
         except Exception as e:
-            print(f"Twitch chat erro: {e}")
+            if _is_twitch_reset_error(e):
+                logger.info("Twitch chat: conexao resetada pelo host, reconectando...")
+            else:
+                print(f"Twitch chat erro: {e}")
         finally:
             try:
-                sock.close()
+                if sock:
+                    sock.close()
             except Exception:
                 pass
         time.sleep(3)
 
 
-def _parse_twitch_privmsg(line: str) -> tuple[Optional[str], Optional[str]]:
+def _is_twitch_reset_error(exc: Exception) -> bool:
+    if isinstance(exc, ConnectionResetError):
+        return True
+    if isinstance(exc, OSError):
+        if getattr(exc, "winerror", None) == 10054:
+            return True
+    texto = str(exc).lower()
+    return (
+        "10054" in texto
+        or "connection reset" in texto
+        or "forcado o cancelamento" in texto
+        or "cancelamento de uma conexao existente" in texto
+    )
+
+
+def _parse_twitch_privmsg(line: str) -> tuple[Optional[str], Optional[str], dict[str, Any]]:
     if "PRIVMSG" not in line:
-        return None, None
+        return None, None, {}
     try:
-        prefix, trailing = line.split(" PRIVMSG ", 1)
+        tags: dict[str, str] = {}
+        raw_line = line
+        if raw_line.startswith("@"):
+            first_space = raw_line.find(" ")
+            if first_space > 1:
+                tags_raw = raw_line[1:first_space]
+                raw_line = raw_line[first_space + 1 :]
+                for part in tags_raw.split(";"):
+                    if not part:
+                        continue
+                    if "=" in part:
+                        key, value = part.split("=", 1)
+                    else:
+                        key, value = part, ""
+                    tags[key] = value
+
+        prefix, trailing = raw_line.split(" PRIVMSG ", 1)
         user = prefix.split("!", 1)[0].lstrip(":")
+        display_user = (tags.get("display-name") or user or "").strip() or "anon"
         if " :" not in trailing:
-            return user, None
+            return display_user, None, {}
         _, msg = trailing.split(" :", 1)
-        return user, msg
+        badges_raw = tags.get("badges", "")
+        badges = [b for b in badges_raw.split(",") if b]
+        badge_names = {b.split("/", 1)[0] for b in badges}
+        bits = _safe_int(tags.get("bits", "0"))
+        is_mod = tags.get("mod", "0") == "1" or "moderator" in badge_names
+        is_subscriber = tags.get("subscriber", "0") == "1" or "subscriber" in badge_names
+        is_member = is_subscriber
+        metadata: dict[str, Any] = {
+            "platform_event_type": "privmsg",
+            "message_id": (tags.get("id") or "").strip(),
+            "user_id": (tags.get("user-id") or "").strip(),
+            "room_id": (tags.get("room-id") or "").strip(),
+            "badges": badges,
+            "is_mod": is_mod,
+            "is_subscriber": is_subscriber,
+            "is_member": is_member,
+            "is_vip": "vip" in badge_names,
+            "bits": bits,
+            "raw_tags": tags,
+            "kind": "bits" if bits > 0 else "message",
+        }
+        return display_user, msg, metadata
     except Exception:
-        return None, None
+        return None, None, {}
 
 
 def _youtube_loop() -> None:
@@ -197,16 +322,78 @@ def _youtube_loop() -> None:
             data = resp.json()
             items = data.get("items", []) or []
             for item in items:
-                author = (item.get("authorDetails") or {}).get("displayName", "anon")
+                author_details = item.get("authorDetails") or {}
+                author = author_details.get("displayName", "anon")
                 snippet = item.get("snippet") or {}
-                text = snippet.get("displayMessage", "")
-                _store_chat("youtube", author, text)
+                yt_type = str(snippet.get("type") or "textMessageEvent").strip()
+                kind = _YT_EVENT_KIND_MAP.get(yt_type, "message")
+                text = str(snippet.get("displayMessage") or "").strip()
+                if not text:
+                    text = _youtube_fallback_text(snippet, kind)
+                if kind == "message" and not text:
+                    continue
+
+                metadata: dict[str, Any] = {
+                    "platform_event_type": yt_type,
+                    "message_id": str(item.get("id") or "").strip(),
+                    "published_at": str(snippet.get("publishedAt") or "").strip(),
+                    "author_channel_id": str(author_details.get("channelId") or "").strip(),
+                    "is_mod": bool(author_details.get("isChatModerator")),
+                    "is_member": bool(author_details.get("isChatSponsor")),
+                    "is_owner": bool(author_details.get("isChatOwner")),
+                    "is_verified": bool(author_details.get("isVerified")),
+                    "kind": kind,
+                }
+
+                details_fields = (
+                    "textMessageDetails",
+                    "superChatDetails",
+                    "superStickerDetails",
+                    "newSponsorDetails",
+                    "memberMilestoneChatDetails",
+                    "membershipGiftPurchaseDetails",
+                    "membershipGiftRedemptionDetails",
+                )
+                for field in details_fields:
+                    details = snippet.get(field)
+                    if isinstance(details, dict):
+                        metadata[field] = details
+
+                _store_chat(
+                    "youtube",
+                    author,
+                    text,
+                    metadata=metadata,
+                    message_kind=kind,
+                )
             page_token = data.get("nextPageToken") or page_token
             poll_ms = int(data.get("pollingIntervalMillis") or poll_default)
             _sleep(poll_ms)
         except Exception as e:
             print(f"YouTube chat erro: {e}")
             _sleep(poll_default)
+
+
+def _youtube_fallback_text(snippet: dict[str, Any], kind: str) -> str:
+    if kind == "superchat":
+        details = snippet.get("superChatDetails") or {}
+        amount = str(details.get("amountDisplayString") or "").strip()
+        return f"[SUPER CHAT] {amount}".strip()
+    if kind == "supersticker":
+        details = snippet.get("superStickerDetails") or {}
+        amount = str(details.get("amountDisplayString") or "").strip()
+        return f"[SUPER STICKER] {amount}".strip()
+    if kind in {"membership", "membership_milestone"}:
+        details = snippet.get("newSponsorDetails") or snippet.get("memberMilestoneChatDetails") or {}
+        level = str(details.get("memberLevelName") or "").strip()
+        return f"[MEMBERSHIP] {level}".strip()
+    if kind == "membership_gift_purchase":
+        details = snippet.get("membershipGiftPurchaseDetails") or {}
+        count = _safe_int(details.get("giftMembershipsCount"), 0)
+        return f"[MEMBERSHIP GIFT] x{count}" if count > 0 else "[MEMBERSHIP GIFT]"
+    if kind == "membership_gift_redemption":
+        return "[MEMBERSHIP GIFT REDEMPTION]"
+    return ""
 
 
 def _sleep(ms: int) -> None:
@@ -217,6 +404,13 @@ def _sleep(ms: int) -> None:
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, default))
+    except Exception:
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(str(value or "").strip())
     except Exception:
         return default
 
@@ -310,9 +504,27 @@ def _gerar_resposta(platform: str, user: str, text: str) -> str:
                 "Reescreva a frase completa sem cortar palavras."
             )
             resposta_retry = conversa.executar(retry)
-            return resposta_retry or resposta
+            final = resposta_retry or resposta
+            if final:
+                emit_event(
+                    "chat.reply_generated",
+                    {"platform": platform, "user": user, "text": text, "reply": final},
+                    source="chat_ingest",
+                )
+            return final
+        if resposta:
+            emit_event(
+                "chat.reply_generated",
+                {"platform": platform, "user": user, "text": text, "reply": resposta},
+                source="chat_ingest",
+            )
         return resposta
     except Exception:
+        emit_event(
+            "chat.reply_error",
+            {"platform": platform, "user": user, "text": text},
+            source="chat_ingest",
+        )
         return ""
 
 

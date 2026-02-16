@@ -1,0 +1,18 @@
+{
+  "id": "chat_membership_console",
+  "name": "Chat Membership -> Console",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "console-output",
+      "config": {},
+      "event_filters": [
+        {
+          "event": "chat.message.membership",
+          "condition": "True"
+        }
+      ]
+    }
+  ],
+  "connections": []
+}

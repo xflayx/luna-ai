@@ -1,11 +1,12 @@
-import importlib
 import logging
 import os
 import time
 from typing import Optional
 
 from config.state import STATE
+from core.event_bus import emit_event
 from core.intent import detectar_intencao
+from core.skill_registry import SkillRegistry
 
 logger = logging.getLogger("Router")
 
@@ -36,73 +37,127 @@ class RouterLuna:
         self.skills = {}
         self.skill_modulos = []
         self.skill_erros = {}
+        self._skill_meta: dict[str, dict[str, tuple[str, ...]]] = {}
+        self._registry = SkillRegistry()
         self._descobrir_skills()
         logger.info(f"{len(self.skill_modulos)} skills registradas (lazy-load)")
 
     def _descobrir_skills(self):
-        base_dir = os.path.dirname(os.path.dirname(__file__))
-        skills_dir = os.path.join(base_dir, "skills")
-        if not os.path.isdir(skills_dir):
-            logger.warning("Diretorio de skills nao encontrado")
-            return
-        ignorar = {"conversa1.py", "vision1.py"}
-        for nome in os.listdir(skills_dir):
-            if not nome.endswith(".py"):
-                continue
-            if nome.startswith("_") or nome == "__init__.py":
-                continue
-            if nome in ignorar:
-                continue
-            self.skill_modulos.append(nome[:-3])
-        self.skill_modulos.sort()
+        self.skill_modulos = self._registry.discover()
+        self._limpar_orfaos()
 
-    def _validar_skill(self, mod) -> bool:
-        if not hasattr(mod, "GATILHOS"):
-            logger.warning(f"{mod.__name__} sem GATILHOS")
-            return False
-        if not hasattr(mod, "executar"):
-            logger.warning(f"{mod.__name__} sem executar()")
-            return False
-        if not hasattr(mod, "SKILL_INFO"):
-            logger.warning(f"{mod.__name__} sem SKILL_INFO")
-            return False
-        return True
+    def _limpar_orfaos(self):
+        ativos = set(self.skill_modulos)
+        for nome in list(self.skills.keys()):
+            if nome not in ativos:
+                self.skills.pop(nome, None)
+        for nome in list(self._skill_meta.keys()):
+            if nome not in ativos:
+                self._skill_meta.pop(nome, None)
+        for nome in list(self.skill_erros.keys()):
+            if nome not in ativos:
+                self.skill_erros.pop(nome, None)
+
+    def _normalizar_lista_str(self, valores) -> tuple[str, ...]:
+        itens: list[str] = []
+        for valor in valores or []:
+            texto = str(valor or "").strip().lower()
+            if texto and texto not in itens:
+                itens.append(texto)
+        return tuple(itens)
+
+    def _registrar_skill_meta(self, nome: str) -> None:
+        manifest = self._registry.get_manifest(nome)
+        if not manifest:
+            return
+        intents = self._normalizar_lista_str(manifest.intents)
+        gatilhos = self._normalizar_lista_str(manifest.gatilhos)
+        self._skill_meta[nome] = {
+            "intents": intents,
+            "gatilhos": gatilhos,
+        }
 
     def _carregar_skill(self, nome: str):
         if nome in self.skills:
             return self.skills[nome]
-        try:
-            mod = importlib.import_module(f"skills.{nome}")
-            if self._validar_skill(mod):
-                self.skills[nome] = mod
-                if hasattr(mod, "inicializar"):
-                    mod.inicializar()
-                return mod
-        except Exception as e:
-            logger.error(f"Falha ao carregar {nome}: {e}")
-            self.skill_erros[nome] = str(e)
-        return None
+        entry = self._registry.load(nome)
+        if not entry or not entry.module:
+            if entry and entry.last_error:
+                self.skill_erros[nome] = entry.last_error
+            return None
+        self.skills[nome] = entry.module
+        self._registrar_skill_meta(nome)
+        return entry.module
 
     def recarregar_skill(self, nome: str):
-        try:
-            mod = importlib.import_module(f"skills.{nome}")
-            mod = importlib.reload(mod)
-            if self._validar_skill(mod):
-                self.skills[nome] = mod
-                if hasattr(mod, "inicializar"):
-                    mod.inicializar()
-                return mod
-        except Exception as e:
-            logger.error(f"Falha ao recarregar {nome}: {e}")
-            self.skill_erros[nome] = str(e)
-        return None
+        entry = self._registry.reload(nome)
+        if not entry or not entry.module:
+            if entry and entry.last_error:
+                self.skill_erros[nome] = entry.last_error
+            return None
+        self.skills[nome] = entry.module
+        self._registrar_skill_meta(nome)
+        return entry.module
 
     def recarregar_todas(self):
-        carregadas = 0
+        self._descobrir_skills()
+        carregadas = self._registry.reload_all()
+        # Sincroniza cache local para manter comportamento atual.
+        for nome in list(self.skills.keys()):
+            if nome not in self.skill_modulos:
+                self.skills.pop(nome, None)
         for nome in self.skill_modulos:
-            if self.recarregar_skill(nome):
-                carregadas += 1
+            entry = self._registry.get_entry(nome)
+            if not entry or not entry.module:
+                continue
+            self.skills[nome] = entry.module
+            self._registrar_skill_meta(nome)
         return carregadas
+
+    def _executar_skill(self, nome: str, cmd_limpo: str, intent: Optional[str]) -> Optional[str]:
+        skill = self._carregar_skill(nome)
+        if not skill:
+            return None
+        try:
+            emit_event(
+                "skill.started",
+                {"skill": nome, "intent": intent or "", "command": cmd_limpo},
+                source="router",
+            )
+            logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
+            resp = _with_retry(skill.executar, cmd_limpo)
+            if resp:
+                STATE.adicionar_ao_historico(cmd_limpo, resp)
+                emit_event(
+                    "skill.completed",
+                    {"skill": nome, "intent": intent or "", "response": resp},
+                    source="router",
+                )
+                return resp
+            emit_event(
+                "skill.completed",
+                {"skill": nome, "intent": intent or "", "response": ""},
+                source="router",
+            )
+            return None
+        except Exception as e:
+            emit_event(
+                "skill.error",
+                {"skill": nome, "intent": intent or "", "error": str(e)},
+                source="router",
+            )
+            return f"Erro: {e}"
+
+    def _candidatos_por_intent_nome(self, intent: Optional[str]) -> list[str]:
+        if not intent:
+            return []
+        return [nome for nome in self.skill_modulos if intent in nome]
+
+    def _candidatos_por_intent_meta(self, intent: Optional[str]) -> list[str]:
+        return self._registry.candidates_by_intent(intent)
+
+    def _candidatos_por_gatilho_meta(self, cmd_limpo: str) -> list[str]:
+        return self._registry.candidates_by_trigger(cmd_limpo)
 
     def processar_comando(self, cmd: str, intent: Optional[str] = None) -> Optional[str]:
         cmd_lower = cmd.lower().strip()
@@ -137,48 +192,36 @@ class RouterLuna:
         if not intent:
             intent = detectar_intencao(cmd_limpo)
 
-        for nome in self.skill_modulos:
-            if intent in nome:
-                skill = self._carregar_skill(nome)
-                if not skill:
+        tentados: set[str] = set()
+
+        fases = (
+            self._candidatos_por_intent_nome(intent),
+            self._candidatos_por_intent_meta(intent),
+            self._candidatos_por_gatilho_meta(cmd_limpo),
+        )
+        for candidatos in fases:
+            for nome in candidatos:
+                if nome in tentados:
                     continue
-                try:
-                    logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
-                    resp = _with_retry(skill.executar, cmd_limpo)
-                    if resp:
-                        STATE.adicionar_ao_historico(cmd_limpo, resp)
+                tentados.add(nome)
+                resp = self._executar_skill(nome, cmd_limpo, intent)
+                if resp is not None:
                     return resp
-                except Exception as e:
-                    return f"Erro: {e}"
 
         for nome in self.skill_modulos:
+            if nome in tentados:
+                continue
             skill = self._carregar_skill(nome)
+            tentados.add(nome)
             if not skill:
                 continue
-            info = getattr(skill, "SKILL_INFO", {})
-            if intent in info.get("intents", []):
-                try:
-                    logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
-                    resp = _with_retry(skill.executar, cmd_limpo)
-                    if resp:
-                        STATE.adicionar_ao_historico(cmd_limpo, resp)
+            meta = self._skill_meta.get(nome, {})
+            intents = meta.get("intents", ())
+            gatilhos = meta.get("gatilhos", ())
+            if (intent and intent in intents) or any(g in cmd_limpo for g in gatilhos):
+                resp = self._executar_skill(nome, cmd_limpo, intent)
+                if resp is not None:
                     return resp
-                except Exception as e:
-                    return f"Erro: {e}"
-
-        for nome in self.skill_modulos:
-            skill = self._carregar_skill(nome)
-            if not skill:
-                continue
-            if any(g in cmd_limpo for g in skill.GATILHOS):
-                try:
-                    logger.info("Skill ativada", extra={"skill": nome, "intent": intent})
-                    resp = _with_retry(skill.executar, cmd_limpo)
-                    if resp:
-                        STATE.adicionar_ao_historico(cmd_limpo, resp)
-                    return resp
-                except Exception as e:
-                    return f"Erro: {e}"
 
         return "Nao entendi esse comando."
 
@@ -199,5 +242,8 @@ if __name__ == "__main__":
         skill = r._carregar_skill(nome)
         if not skill:
             continue
-        info = getattr(skill, "SKILL_INFO", {})
-        print(f"{info.get('nome', nome)}: {skill.GATILHOS[:3]}")
+        manifest = r._registry.get_manifest(nome)
+        if not manifest:
+            print(f"{nome}: (sem manifesto)")
+            continue
+        print(f"{manifest.nome}: {list(manifest.gatilhos)[:3]}")

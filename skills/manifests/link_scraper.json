@@ -1,0 +1,38 @@
+{
+  "id": "link_scraper",
+  "name": "Link Scraper",
+  "description": "Extrai links de uma URL e salva em arquivo .txt.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "web",
+  "intents": [
+    "link_scraper"
+  ],
+  "gatilhos": [
+    "extrair links",
+    "listar links",
+    "coletar links",
+    "salvar links",
+    "mapear links",
+    "raspar links"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando com URL opcional."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resumo da extracao e caminho do arquivo salvo."
+    },
+    {
+      "id": "file_path",
+      "type": "string",
+      "description": "Caminho local do .txt com os links."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import os
 import threading
 import time
 import random
+import tempfile
 from datetime import datetime
 
 from config.env import init_env
@@ -197,16 +198,30 @@ class StateManager:
             with open(_HISTORY_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
-                return data
+                return data[-_HISTORY_MAX:]
         except Exception:
             pass
         return []
 
     def _salvar_historico(self):
         try:
-            os.makedirs(os.path.dirname(_HISTORY_PATH), exist_ok=True)
-            with open(_HISTORY_PATH, "w", encoding="utf-8") as f:
-                json.dump(self._historico, f, ensure_ascii=True, indent=2)
+            target_dir = os.path.dirname(_HISTORY_PATH)
+            os.makedirs(target_dir, exist_ok=True)
+            fd, tmp_path = tempfile.mkstemp(
+                prefix="chat_history_",
+                suffix=".tmp",
+                dir=target_dir,
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(self._historico, f, ensure_ascii=True, separators=(",", ":"))
+                os.replace(tmp_path, _HISTORY_PATH)
+            finally:
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
         except Exception:
             pass
 

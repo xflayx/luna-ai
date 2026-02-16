@@ -24,6 +24,12 @@ def _enabled() -> bool:
     return bool(_text_source())
 
 
+def _enabled_for_control() -> bool:
+    if os.getenv("LUNA_OBS_ENABLED", "0") == "1":
+        return True
+    return bool(_text_source()) or bool(_scene_name())
+
+
 def _host() -> str:
     return os.getenv("LUNA_OBS_HOST", "127.0.0.1")
 
@@ -92,8 +98,6 @@ def _connect() -> bool:
     global _client, _connected
     if not obs:
         return False
-    if not _text_source():
-        return False
     if _client and _connected:
         return True
     try:
@@ -131,6 +135,58 @@ def update_text(texto: str, source_name: Optional[str] = None) -> None:
         except Exception as e:
             _disconnect()
     _schedule_clear(source)
+
+
+def switch_scene(scene_name: str) -> bool:
+    if not _enabled_for_control():
+        return False
+    scene = (scene_name or "").strip()
+    if not scene:
+        return False
+    with _lock:
+        if not _connect():
+            return False
+        try:
+            try:
+                _client.set_current_program_scene(scene_name=scene)
+            except TypeError:
+                _client.set_current_program_scene(scene)
+            return True
+        except Exception:
+            _disconnect()
+            return False
+
+
+def set_source_enabled(source_name: str, enabled: bool, scene_name: str = "") -> bool:
+    if not _enabled_for_control():
+        return False
+    source = (source_name or "").strip()
+    if not source:
+        return False
+    scene = (scene_name or "").strip()
+    with _lock:
+        if not _connect():
+            return False
+        try:
+            resolved_scene = scene or _scene_name() or _get_current_scene()
+            if not resolved_scene:
+                return False
+            item_resp = _client.get_scene_item_id(
+                scene_name=resolved_scene,
+                source_name=source,
+            )
+            item_id = _get_attr(item_resp, "scene_item_id") or _get_attr(item_resp, "sceneItemId")
+            if not item_id:
+                return False
+            _client.set_scene_item_enabled(
+                scene_name=resolved_scene,
+                item_id=item_id,
+                enabled=bool(enabled),
+            )
+            return True
+        except Exception:
+            _disconnect()
+            return False
 
 
 def _schedule_clear(source: str) -> None:

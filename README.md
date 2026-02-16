@@ -1,199 +1,199 @@
-# LUNA - Assistente Virtual Inteligente
+# LUNA - Assistente Virtual com Voz, Workflow e Automacao
 
-Luna e uma assistente virtual em Python com voz, visao e automacao. Ela usa LLMs
-(Gemini/Groq) para conversar, resumir conteudos e responder com personalidade.
+Luna e uma assistente virtual em Python com:
 
-## Principais recursos
-- Conversa com memoria curta
-- Luna Vision: analise da tela via screenshot
-- Reanalise da ultima captura (sem nova captura)
-- Web Reader: resumo de pagina atual e posts do X/Twitter
-- YouTube Summary: resumo via transcricao
-- Noticias: busca e resumo via SerpAPI
-- Precos: consulta de cripto via CoinMarketCap
-- Sistema: status do PC (CPU/RAM)
-- Sequencias: gravar e executar macros de teclado/mouse
-- Atalhos radial e guia de jogos baseado na tela
-- STT via Groq ASR com fallback para Google
-- System prompt via YAML com fallback para system_message.txt
-- Config central opcional via `config/assistant_config.yaml` (override do .env)
-- Historico persistente em `memory/chat_history.json`
-- Legendas no OBS via WebSocket v5
-- Painel realtime (Flask + Socket.IO)
-- Pet desktop (Electron + backend Python local via WebSocket)
+- voz (STT + TTS),
+- skills modulares,
+- motor de workflow (linear e event-driven),
+- event bus para automacoes,
+- painel realtime,
+- integracao opcional com OBS e pet desktop (Electron + FastAPI).
 
-## Skills (habilidades)
-- conversa: chat principal com personalidade
-- vision: analise visual da tela (Gemini Vision)
-- web_reader: resumo de paginas e posts
-- youtube_summary: resumo por transcricao
-- news: noticias via SerpAPI
-- price: preco de cripto via CoinMarketCap
-- system_monitor: status do PC
-- sequencia_manager: macros/loops
-- atalhos_radial: menu radial/atalhos
-- game_guide: guia rapido baseado na tela
-- link_scraper: extracao de links em paginas
+---
 
-## Requisitos
+## 1. Destaques da arquitetura atual
+
+### Workflow-first com fallback
+- Comandos passam por `core/command_orchestrator.py`.
+- Se houver workflow carregado compativel, ele roda primeiro.
+- Se nao houver resposta, cai no router tradicional.
+
+### Skill manifests tipados
+- Cada skill possui manifesto em `skills/manifests/*.json`.
+- Contratos de `inputs`, `outputs` e `config` sao validados por `core/skill_registry.py`.
+
+### Event bus + chat events ricos
+- `core/event_bus.py` suporta pub/sub com filtros.
+- `core/chat_ingest.py` publica eventos como:
+- `chat.message.received`
+- `chat.message.superchat`
+- `chat.message.membership`
+- `message.received`
+
+### OBS alem de legenda
+- `core/obs_client.py` suporta:
+- update de texto (legenda),
+- troca de cena,
+- toggle de fonte.
+
+### Metricas de fila/backpressure
+- `core/workflow_engine.py` expoe:
+- `queue_size`, `queue_dropped`, `queue_processing`,
+- `events_processed`, `events_failed`.
+- Painel mostra essas metricas em tempo real.
+
+---
+
+## 2. Requisitos
+
 - Python 3.10+
-- Windows recomendado para voz e automacao
+- Windows recomendado (voz/automacao/PTT)
+- Node.js (somente para pet desktop em `app/`)
 
-## Instalacao
+---
+
+## 3. Instalacao
+
 ```bash
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-### Pet desktop (opcional)
+Opcional (pet desktop):
+
 ```bash
 cd app
 npm install
 npm start
 ```
 
-Notas do pet:
-- O pet usa `app/backend/server.py` (FastAPI + WebSocket local em `127.0.0.1`).
-- O pet nao depende de Flet (implementacao Flet foi removida).
+---
 
-Notas:
-- No Windows, o pyaudio pode exigir instalacao extra:
-  ```bash
-  pip install pipwin
-  pipwin install pyaudio
-  ```
+## 4. Configuracao rapida (.env)
 
-## Configuracao (.env ou YAML)
-Voce pode usar o `.env` **ou** o `config/assistant_config.yaml`.
-O YAML sobrescreve o `.env` apenas quando o valor estiver preenchido.
+Copie `.env.example` para `.env` e ajuste as chaves necessarias.
 
-### Exemplo .env
-Crie um arquivo `.env` com as chaves que voce usar:
+Minimo comum:
 
-```
-GEMINI_API_KEY=...
-# opcionais para rotacao
-GEMINI_API_KEY_2=...
-GEMINI_API_KEY_3=...
+```env
+GEMINI_API_KEY=
+GROQ_API_KEY=
 
-# resumo de YouTube e STT Groq
-GROQ_API_KEY=...
-LUNA_GROQ_MODEL=llama-3.1-8b-instant
-LUNA_GROQ_STT_MODEL=whisper-large-v3
-LUNA_STT_ENGINE=groq
-
-# noticias
-SERPAPI_API_KEY=...
-
-# precos cripto
-COINMARKETCAP_API_KEY=...
-
-# TTS externo (opcional)
-MURF_API_KEY=...
-LUNA_TTS_ENGINE=murf
-LUNA_MURF_VOICE=pt-BR-isadora
-MURF_FORMAT=WAV
-MURF_STYLE=Conversational
-MURF_LOCALE=pt-BR
-MURF_RATE=15
-MURF_PITCH=10
-MURF_MODEL=FALCON
-MURF_SAMPLE_RATE=24000
-MURF_CHANNEL_TYPE=MONO
-MURF_BASE_URL=https://api.murf.ai
-MURF_STREAM_URL=https://global.api.murf.ai/v1/speech/stream
-LUNA_FFPLAY_PATH=...
-
-# Pet TTS (somente pet, sem afetar a Luna principal)
-LUNA_PET_TTS_ENABLED=1
-LUNA_PET_TTS_PROVIDER=murf
-LUNA_PET_FALAR=0
-LUNA_PET_TTS_FORMAT=WAV
-LUNA_PET_MURF_VOICE=pt-BR-isadora
-LUNA_PET_MURF_STYLE=Conversational
-LUNA_PET_MURF_LOCALE=pt-BR
-LUNA_PET_MURF_MODEL=FALCON
-LUNA_PET_MURF_RATE=15
-LUNA_PET_MURF_PITCH=10
-LUNA_PET_MURF_SAMPLE_RATE=24000
-LUNA_PET_MURF_CHANNEL_TYPE=MONO
-LUNA_PET_TTS_TIMEOUT=120
-
-# memoria curta
-LUNA_MEM_LENGTH=2
-LUNA_SYSTEM_PROMPT_PATH=system_message.txt
-LUNA_SYSTEM_YAML_PATH=system_message.yaml
-LUNA_PROMPT_ORDER=inject_then_trim
-LUNA_CHAT_HISTORY_PATH=memory/chat_history.json
-LUNA_CHAT_HISTORY_MAX=20
-
-# painel realtime
 LUNA_PANEL_ENABLED=1
 LUNA_PANEL_HOST=127.0.0.1
 LUNA_PANEL_PORT=5055
-LUNA_PANEL_TOKEN=
-
-# OBS WebSocket (legendas) - v5
-LUNA_OBS_ENABLED=1
-LUNA_OBS_HOST=127.0.0.1
-LUNA_OBS_PORT=4455
-LUNA_OBS_PASSWORD=...
-LUNA_OBS_TEXT_SOURCE=Legenda_Luna
-LUNA_OBS_WRAP_CHARS=42
-LUNA_OBS_CLEAR_SEC=6
-LUNA_OBS_CLEAR_HIDE=1
-LUNA_OBS_SCENE=MinhaCena
-
-# Integracao chat (Twitch/YouTube)
-LUNA_TWITCH_ENABLED=0
-LUNA_TWITCH_NICK=seu_bot
-LUNA_TWITCH_OAUTH=oauth:seu_token
-LUNA_TWITCH_CHANNEL=seu_canal
-
-LUNA_YT_ENABLED=0
-LUNA_YT_API_KEY=...
-LUNA_YT_LIVE_CHAT_ID=...
-LUNA_YT_POLL_MS=5000
-
-# Resposta por voz para chat
-LUNA_CHAT_REPLY_ENABLED=0
-LUNA_CHAT_REPLY_MODE=mention  # mention | prefix | all
-LUNA_CHAT_REPLY_PREFIX=!luna
-LUNA_CHAT_REPLY_NAME=luna
-LUNA_CHAT_REPLY_MIN_INTERVAL=8
-LUNA_CHAT_REPLY_USER_COOLDOWN=30
-LUNA_CHAT_REPLY_MAX_CHARS=200
-LUNA_CHAT_REPLY_PLATFORMS=twitch,youtube
-LUNA_CHAT_REPLY_QUEUE_MAX=20
-LUNA_CHAT_REPLY_IGNORE_USERS=
 ```
 
-## Uso rapido
-Exemplos de comandos por voz:
-- "Luna, analise minha tela"
-- "Luna, leia esse site" (usa a URL atual do navegador)
-- "Luna, faca um resumo desse post" (X/Twitter)
-- "Luna, resumo do youtube https://..."
-- "Luna, preco do bitcoin"
-- "Luna, noticias de tecnologia"
-- "Luna, gravar sequencia" / "Luna, executar sequencia NOME"
+---
 
-## Estrutura do projeto
-- `core`: roteamento, intencoes, voz e painel realtime
-- `skills`: habilidades (vision, web_reader, youtube_summary, etc)
-- `llm`: integracoes com LLM
-- `config`: estado e configuracoes
-- `config/assistant_config.yaml`: config central opcional (override do .env)
-- `data`: macros/seqs gravadas
-- `interface`: menu radial (eel)
-- `system_message.yaml`: prompt principal (fallback para `system_message.txt`)
-- `memory/chat_history.json`: historico persistente da conversa
+## 5. Workflow Engine (com autostart)
 
-## Testes
-```bash
-pytest tests/ -v
+### 5.1 Variaveis principais
+
+```env
+LUNA_WORKFLOW_DIR=
+LUNA_WORKFLOW_AUTOSTART=0
+LUNA_WORKFLOW_AUTO_ID=
+LUNA_WORKFLOW_AUTO_PATH=
+LUNA_WORKFLOW_AUTO_LISTEN_PATTERNS=chat.*
+LUNA_WORKFLOW_AUTO_START_NODE_ID=
 ```
 
-## Observacoes
-- O Web Reader depende do navegador aberto e pode falhar em sites com login.
-- Para X/Twitter, logue no navegador antes do resumo.
+### 5.2 Exemplo de autostart event-driven
+
+```env
+LUNA_WORKFLOW_AUTOSTART=1
+LUNA_WORKFLOW_AUTO_PATH=templates/chat_superchat_console.json
+LUNA_WORKFLOW_AUTO_LISTEN_PATTERNS=chat.*
+```
+
+Com isso, ao iniciar a Luna:
+- workflow sobe automaticamente,
+- eventos de chat ja comecam a ser processados.
+
+### 5.3 Templates prontos
+
+Em `workflows/templates/`:
+
+- `manual_system_monitor.json`
+- `chat_superchat_console.json`
+- `chat_superchat_obs_scene.json`
+- `chat_membership_console.json`
+- `chat_membership_obs_source.json`
+- `chat_system_monitor.json`
+
+---
+
+## 6. Modos de ativacao e PTT
+
+- `assistente`: exige prefixo "luna" no comando.
+- `vtuber`: aceita comando direto.
+- Com `LUNA_PTT_ENABLED=1`, o PTT controla quando gravar, e o modo continua influenciando validacao de comando.
+
+---
+
+## 7. Comandos de exemplo
+
+- `Luna, analise minha tela`
+- `Luna, leia esse site`
+- `Luna, resumo do youtube https://...`
+- `Luna, preco do bitcoin`
+- `Luna, noticias de tecnologia`
+- `Luna, modo vtuber`
+- `Luna, modo assistente`
+- `Luna, gravar sequencia`
+- `Luna, executar sequencia NOME`
+
+---
+
+## 8. Estrutura principal
+
+```text
+Luna/
+  main.py
+  config/
+  core/
+  skills/
+    manifests/
+  workflows/
+    templates/
+  llm/
+  interface/
+  app/
+    backend/
+    electron/
+  memory/
+  data/
+  docs/
+```
+
+---
+
+## 9. Arquivos centrais para desenvolvimento
+
+- `main.py`: bootstrap e loop principal.
+- `core/command_orchestrator.py`: workflow-first + fallback router.
+- `core/workflow_engine.py`: motor de fluxo/eventos.
+- `core/workflow_runtime.py`: runtime/load/start/stop/autostart.
+- `core/router.py`: roteamento por intent/gatilho.
+- `core/skill_registry.py`: discovery/load/validacao de skills.
+- `core/chat_ingest.py`: ingestao de Twitch/YouTube e emissao de eventos.
+- `core/realtime_panel_modern.py`: painel, controles e health.
+
+---
+
+## 10. Documentacao detalhada por arquivo
+
+Para um mapeamento tecnico completo de cada arquivo:
+
+- `docs/luna_guia_detalhado_arquivos.md`
+
+---
+
+## 11. Observacoes operacionais
+
+- Para usar OBS, habilite `LUNA_OBS_ENABLED=1` e configure host/port/password/source.
+- Para chat ingest, configure variaveis de Twitch/YouTube no `.env`.
+- Sem APIs configuradas, skills que dependem de LLM/search podem falhar de forma esperada.
+- O painel realtime pode requerer token (`LUNA_PANEL_TOKEN`) dependendo da configuracao.
+

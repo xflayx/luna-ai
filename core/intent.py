@@ -140,6 +140,10 @@ def detectar_intencao(cmd: str) -> str:
     ):
         return "vision"
 
+    # Noticias (antes de preco para evitar ambiguidade: "noticias sobre bitcoin")
+    if _tem_palavra(cmd_norm, ["noticia", "noticias", "news", "jornal", "manchete", "manchetes", "acontecendo"]):
+        return "news"
+
     # Preco
     if _tem_palavra(cmd_norm, ["preco", "valor", "cotacao", "bitcoin", "dolar", "real", "crypto"]):
         return "price"

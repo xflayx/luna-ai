@@ -1,0 +1,33 @@
+{
+  "id": "conversa",
+  "name": "Conversa",
+  "description": "Conversa com personalidade e memoria curta",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "llm",
+  "intents": [
+    "chat",
+    "conversa"
+  ],
+  "gatilhos": [
+    "conversa",
+    "falar",
+    "chat",
+    "papo",
+    "fale comigo"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando textual do usuario"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resposta textual da skill"
+    }
+  ]
+}

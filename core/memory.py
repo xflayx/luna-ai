@@ -1,6 +1,9 @@
+import copy
 import json
 import os
 import re
+import tempfile
+import threading
 from datetime import datetime
 
 
@@ -9,6 +12,8 @@ MEMORY_DIR = os.path.join(BASE_DIR, "memory")
 SHORT_MEMORY_PATH = os.path.join(MEMORY_DIR, "short_term.json")
 LONG_MEMORY_PATH = os.path.join(MEMORY_DIR, "long_term.json")
 LEGACY_MEMORY_PATH = os.path.join(BASE_DIR, "data", "memoria.json")
+_STORE_LOCK = threading.RLock()
+_STORE_CACHE: dict[str, tuple[float, dict]] = {}
 
 
 def _now_iso():
@@ -19,34 +24,73 @@ def _empty_store():
     return {"items": [], "meta": {"created_at": "", "updated_at": "", "version": 1}}
 
 
+def _clone_store(store: dict) -> dict:
+    return copy.deepcopy(store)
+
+
 def _load_store(path):
     if not os.path.isfile(path):
         return _empty_store()
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and isinstance(data.get("items"), list):
-            return data
-        if isinstance(data, list):
+    with _STORE_LOCK:
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return _empty_store()
+
+        cached = _STORE_CACHE.get(path)
+        if cached and cached[0] == mtime:
+            return _clone_store(cached[1])
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and isinstance(data.get("items"), list):
+                store = data
+            elif isinstance(data, list):
+                store = _empty_store()
+                store["items"] = data
+            else:
+                store = _empty_store()
+        except Exception:
             store = _empty_store()
-            store["items"] = data
-            return store
-    except Exception:
-        pass
-    return _empty_store()
+
+        _STORE_CACHE[path] = (mtime, _clone_store(store))
+        return _clone_store(store)
 
 
 def _save_store(path, store):
-    os.makedirs(MEMORY_DIR, exist_ok=True)
-    now = _now_iso()
-    meta = store.get("meta") or {}
-    if not meta.get("created_at"):
-        meta["created_at"] = now
-    meta["updated_at"] = now
-    meta["version"] = meta.get("version", 1)
-    store["meta"] = meta
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(store, f, ensure_ascii=True, indent=2)
+    with _STORE_LOCK:
+        target_dir = os.path.dirname(path) or MEMORY_DIR
+        os.makedirs(target_dir, exist_ok=True)
+        now = _now_iso()
+        meta = store.get("meta") or {}
+        if not meta.get("created_at"):
+            meta["created_at"] = now
+        meta["updated_at"] = now
+        meta["version"] = meta.get("version", 1)
+        store["meta"] = meta
+
+        fd, tmp_path = tempfile.mkstemp(
+            prefix="luna_mem_",
+            suffix=".tmp",
+            dir=target_dir,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(store, f, ensure_ascii=True, separators=(",", ":"))
+            os.replace(tmp_path, path)
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = -1.0
+        _STORE_CACHE[path] = (mtime, _clone_store(store))
 
 
 def _load_legacy_items():
@@ -65,31 +109,33 @@ def _load_legacy_items():
 
 
 def _ensure_long_memory_initialized():
-    if os.path.isfile(LONG_MEMORY_PATH):
-        return
-    legacy_items = _load_legacy_items()
-    if not legacy_items:
-        return
-    store = _empty_store()
-    store["items"] = legacy_items
-    _save_store(LONG_MEMORY_PATH, store)
+    with _STORE_LOCK:
+        if os.path.isfile(LONG_MEMORY_PATH):
+            return
+        legacy_items = _load_legacy_items()
+        if not legacy_items:
+            return
+        store = _empty_store()
+        store["items"] = legacy_items
+        _save_store(LONG_MEMORY_PATH, store)
 
 
 def _add_item(path, texto, origem="usuario", max_items=None):
     texto_limpo = (texto or "").strip()
     if not texto_limpo:
         return False
-    store = _load_store(path)
-    store.setdefault("items", []).append(
-        {
-            "timestamp": _now_iso(),
-            "origem": origem,
-            "texto": texto_limpo,
-        }
-    )
-    if max_items is not None and len(store["items"]) > max_items:
-        store["items"] = store["items"][-max_items:]
-    _save_store(path, store)
+    with _STORE_LOCK:
+        store = _load_store(path)
+        store.setdefault("items", []).append(
+            {
+                "timestamp": _now_iso(),
+                "origem": origem,
+                "texto": texto_limpo,
+            }
+        )
+        if max_items is not None and len(store["items"]) > max_items:
+            store["items"] = store["items"][-max_items:]
+        _save_store(path, store)
     return True
 
 

@@ -1,0 +1,63 @@
+{
+  "id": "tts_murf",
+  "name": "TTS Murf",
+  "description": "Gera narracao via Murf a partir de texto ou arquivo.",
+  "version": "1.0.0",
+  "author": "Luna",
+  "category": "audio",
+  "intents": [
+    "tts",
+    "narrar",
+    "narracao",
+    "narração",
+    "murf",
+    "voz"
+  ],
+  "gatilhos": [
+    "tts",
+    "narrar",
+    "narracao",
+    "narração",
+    "murf",
+    "voz",
+    "ler roteiro",
+    "leia o roteiro"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Texto do roteiro ou comando com caminho de arquivo."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Status de geracao e caminhos de saida."
+    },
+    {
+      "id": "audio_path",
+      "type": "string",
+      "description": "Caminho do arquivo de audio principal."
+    }
+  ],
+  "config": {
+    "voice_id": {
+      "type": "string",
+      "label": "Voice ID",
+      "description": "Voice ID padrao da Murf.",
+      "default": ""
+    },
+    "format": {
+      "type": "select",
+      "label": "Formato",
+      "description": "Formato do audio de saida.",
+      "default": "MP3",
+      "options": [
+        "MP3",
+        "WAV"
+      ]
+    }
+  }
+}

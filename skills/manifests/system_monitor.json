@@ -1,0 +1,32 @@
+{
+  "id": "system_monitor",
+  "name": "System Monitor",
+  "description": "Monitora CPU e RAM e responde com status do sistema.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "system",
+  "intents": [
+    "system_monitor"
+  ],
+  "gatilhos": [
+    "computador",
+    "pc",
+    "memoria",
+    "processador",
+    "status"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando de consulta de status do PC."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resumo de CPU e RAM."
+    }
+  ]
+}

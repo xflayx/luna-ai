@@ -1,0 +1,20 @@
+{
+  "id": "chat_superchat_obs_scene",
+  "name": "Chat Superchat -> OBS Scene Switch",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "obs-scene-switch",
+      "config": {
+        "sceneName": "CenaSuperChat"
+      },
+      "event_filters": [
+        {
+          "event": "chat.message.superchat",
+          "condition": "True"
+        }
+      ]
+    }
+  ],
+  "connections": []
+}

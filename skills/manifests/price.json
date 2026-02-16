@@ -1,0 +1,33 @@
+{
+  "id": "price",
+  "name": "Price",
+  "description": "Consulta cotacao de criptomoedas via CoinMarketCap.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "finance",
+  "intents": [
+    "preco",
+    "price"
+  ],
+  "gatilhos": [
+    "preco",
+    "preco hoje",
+    "valor",
+    "cotacao",
+    "quanto esta"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Comando com nome/simbolo da cripto."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resposta textual com preco e variacao."
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import os
+import hmac
 import threading
 import time
 import logging
@@ -31,10 +32,45 @@ def _panel_token() -> str:
     return os.getenv("LUNA_PANEL_TOKEN", "").strip()
 
 
+def _panel_require_token() -> bool:
+    return os.getenv("LUNA_PANEL_REQUIRE_TOKEN", "1") == "1"
+
+
+def _panel_cors_origins() -> list[str]:
+    raw = os.getenv("LUNA_PANEL_CORS_ORIGINS", "").strip()
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        return origins
+
+    port = _panel_port()
+    host = _panel_host().strip() or "127.0.0.1"
+    defaults = [
+        f"http://{host}:{port}",
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+    ]
+    # Remove duplicados mantendo ordem
+    return list(dict.fromkeys(defaults))
+
+
+def _panel_tick_sec() -> float:
+    try:
+        return max(0.5, float(os.getenv("LUNA_PANEL_TICK_SEC", "1.5")))
+    except ValueError:
+        return 1.5
+
+
+def _panel_max_payload_bytes() -> int:
+    try:
+        return max(1024, int(os.getenv("LUNA_PANEL_MAX_PAYLOAD_BYTES", "16384")))
+    except ValueError:
+        return 16384
+
+
 def _token_ok(request) -> bool:
     required = _panel_token()
     if not required:
-        return True
+        return not _panel_require_token()
     token = (request.headers.get("X-Panel-Token", "") or "").strip()
     if not token:
         token = (request.args.get("token", "") or "").strip()
@@ -44,7 +80,115 @@ def _token_ok(request) -> bool:
             token = (body.get("token") or "").strip()
         except Exception:
             token = ""
-    return token == required
+    return hmac.compare_digest(token, required)
+
+
+def _empty_manifest_coverage() -> Dict[str, Any]:
+    return {
+        "total_skills": 0,
+        "with_external_manifest": 0,
+        "without_external_manifest": 0,
+        "missing_external_manifests": [],
+        "skills": [],
+    }
+
+
+def _empty_skill_diagnostics() -> Dict[str, Any]:
+    return {
+        "total": 0,
+        "loaded": 0,
+        "failed": 0,
+        "entries": [],
+    }
+
+
+def _get_router_instance(create: bool = False):
+    try:
+        from core import router as router_mod
+    except Exception:
+        return None
+
+    router = getattr(router_mod, "_router", None)
+    if router is None and create:
+        try:
+            router = router_mod.RouterLuna()
+            setattr(router_mod, "_router", router)
+        except Exception:
+            return None
+    return router
+
+
+def _get_skill_registry_snapshot(
+    *,
+    ensure_loaded: bool = False,
+    create_router: bool = False,
+    include_entries: bool = False,
+    include_skills: bool = False,
+) -> Dict[str, Any]:
+    coverage = _empty_manifest_coverage()
+    diagnostics = _empty_skill_diagnostics()
+    source = "none"
+    error = ""
+
+    try:
+        router = _get_router_instance(create=create_router)
+        registry = getattr(router, "_registry", None) if router else None
+
+        if registry is None:
+            from core.skill_registry import SkillRegistry
+
+            registry = SkillRegistry()
+            source = "standalone_registry"
+        else:
+            source = "router_registry"
+
+        coverage = registry.get_manifest_coverage()
+        diagnostics = registry.get_diagnostics(ensure_loaded=ensure_loaded)
+    except Exception as exc:
+        error = str(exc)
+
+    if not include_skills:
+        coverage = dict(coverage or {})
+        coverage["skills"] = []
+
+    if not include_entries:
+        diagnostics = dict(diagnostics or {})
+        diagnostics["entries"] = []
+
+    return {
+        "coverage": coverage,
+        "diagnostics": diagnostics,
+        "source": source,
+        "error": error,
+    }
+
+
+def _workflow_invalid_response(report: Dict[str, Any]) -> Dict[str, Any]:
+    errors = list(report.get("errors") or [])
+    first_error = errors[0] if errors else "Erro desconhecido."
+    return {
+        "ok": False,
+        "msg": f"Workflow invalido ({len(errors)} erro(s)). {first_error}",
+        "workflow_validation": report,
+    }
+
+
+def _workflow_exception_report(
+    exc: Exception,
+    *,
+    workflow_id: str = "",
+    start_node_id: str = "",
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "errors": [str(exc)],
+        "workflow_id": (workflow_id or "").strip(),
+        "workflow_name": "",
+        "nodes": 0,
+        "connections": 0,
+        "start_node_id": (start_node_id or "").strip(),
+        "execution_order": [],
+    }
 
 
 def _build_state(
@@ -81,6 +225,34 @@ def _build_state(
             "ativo": False,
         }
 
+    try:
+        from core.workflow_runtime import get_runtime_status
+        workflow_status = get_runtime_status()
+    except Exception:
+        workflow_status = {
+            "status": "idle",
+            "workflow_id": "",
+            "workflow_name": "",
+            "queue_size": 0,
+            "queue_dropped": 0,
+            "queue_processing": False,
+            "events_processed": 0,
+            "events_failed": 0,
+            "events_total": 0,
+            "last_event_ts": 0.0,
+            "loaded_workflow": {"loaded": False},
+        }
+
+    skill_snapshot = _get_skill_registry_snapshot(
+        ensure_loaded=False,
+        create_router=False,
+        include_entries=False,
+        include_skills=False,
+    )
+    coverage = skill_snapshot.get("coverage", {}) or {}
+    diagnostics = skill_snapshot.get("diagnostics", {}) or {}
+    missing_external = coverage.get("missing_external_manifests") or []
+
     return {
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
         "modo": STATE.get_modo_ativacao(),
@@ -98,6 +270,17 @@ def _build_state(
         "tts_queue_max": tts_queue_max,
         "stt_engine": stt_engine,
         "visao_auto": visao_auto,
+        "workflow": workflow_status,
+        "skill_registry": {
+            "source": skill_snapshot.get("source", "none"),
+            "error": skill_snapshot.get("error", ""),
+            "total_skills": int(coverage.get("total_skills", 0) or 0),
+            "with_external_manifest": int(coverage.get("with_external_manifest", 0) or 0),
+            "without_external_manifest": int(coverage.get("without_external_manifest", 0) or 0),
+            "missing_external_manifest_count": len(missing_external),
+            "loaded": int(diagnostics.get("loaded", 0) or 0),
+            "failed": int(diagnostics.get("failed", 0) or 0),
+        },
     }
 
 
@@ -124,7 +307,7 @@ def atualizar_estado(
 def _handle_control(data: Dict[str, Any]) -> Dict[str, Any]:
     from config.state import STATE
     from core import memory
-    from core.router import processar_comando
+    from core.command_orchestrator import processar_comando_orquestrado
     from core.voice import falar
 
     action = (data.get("action") or "").strip()
@@ -142,8 +325,9 @@ def _handle_control(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if action == "recarregar_skills":
         try:
-            from core.router import _router, RouterLuna
-            router = _router or RouterLuna()
+            router = _get_router_instance(create=True)
+            if router is None:
+                return {"ok": False, "msg": "Router indisponivel para recarregar skills."}
             total = router.recarregar_todas()
             return {"ok": True, "msg": f"Recarreguei {total} skills."}
         except Exception as e:
@@ -155,6 +339,222 @@ def _handle_control(data: Dict[str, Any]) -> Dict[str, Any]:
             falar(texto)
             return {"ok": True, "msg": "Falando texto."}
         return {"ok": False, "msg": "Texto vazio."}
+
+    if action == "workflow_list":
+        try:
+            from core.workflow_runtime import list_workflows
+            workflows = list_workflows()
+            return {
+                "ok": True,
+                "msg": f"{len(workflows)} workflow(s) disponivel(is).",
+                "workflows": workflows,
+            }
+        except Exception as e:
+            return {"ok": False, "msg": f"Falha ao listar workflows: {e}"}
+
+    if action == "workflow_load":
+        workflow_id = (payload.get("workflow_id") or "").strip()
+        path = (payload.get("path") or "").strip()
+        wf_data = payload.get("data")
+        if wf_data is not None and not isinstance(wf_data, dict):
+            return {"ok": False, "msg": "Campo 'data' precisa ser objeto JSON."}
+        try:
+            from core.workflow_runtime import load_workflow, get_loaded_workflow_meta
+            load_workflow(
+                workflow_id=workflow_id,
+                path=path,
+                data=wf_data,
+            )
+            return {
+                "ok": True,
+                "msg": "Workflow carregado.",
+                "workflow": get_loaded_workflow_meta(),
+            }
+        except Exception as e:
+            return {"ok": False, "msg": f"Falha ao carregar workflow: {e}"}
+
+    if action == "workflow_validate":
+        workflow_id = (payload.get("workflow_id") or "").strip()
+        path = (payload.get("path") or "").strip()
+        wf_data = payload.get("data")
+        if wf_data is not None and not isinstance(wf_data, dict):
+            return {"ok": False, "msg": "Campo 'data' precisa ser objeto JSON."}
+        start_node_id = (payload.get("start_node_id") or "").strip()
+        try:
+            from core.workflow_runtime import validate_workflow
+            report = validate_workflow(
+                workflow_id=workflow_id,
+                path=path,
+                data=wf_data,
+                start_node_id=start_node_id,
+            )
+            ok = bool(report.get("ok"))
+            if ok:
+                order = report.get("execution_order") or []
+                return {
+                    "ok": True,
+                    "msg": f"Workflow valido. Ordem: {', '.join(order) if order else '(vazia)'}",
+                    "workflow_validation": report,
+                }
+            return _workflow_invalid_response(report)
+        except Exception as e:
+            return _workflow_invalid_response(
+                _workflow_exception_report(
+                    e,
+                    workflow_id=workflow_id,
+                    start_node_id=start_node_id,
+                )
+            )
+
+    if action == "workflow_start":
+        workflow_id = (payload.get("workflow_id") or "").strip()
+        path = (payload.get("path") or "").strip()
+        wf_data = payload.get("data")
+        if wf_data is not None and not isinstance(wf_data, dict):
+            return {"ok": False, "msg": "Campo 'data' precisa ser objeto JSON."}
+        start_node_id = (payload.get("start_node_id") or "").strip()
+
+        raw_patterns = payload.get("listen_patterns")
+        listen_patterns: tuple[str, ...]
+        if isinstance(raw_patterns, list):
+            listen_patterns = tuple(str(x).strip() for x in raw_patterns if str(x).strip())
+        elif isinstance(raw_patterns, str):
+            listen_patterns = tuple(
+                x.strip() for x in raw_patterns.split(",") if x.strip()
+            )
+        else:
+            listen_patterns = ("chat.*",)
+
+        report = None
+        try:
+            from core.workflow_runtime import validate_workflow
+            report = validate_workflow(
+                workflow_id=workflow_id,
+                path=path,
+                data=wf_data,
+                start_node_id=start_node_id,
+            )
+        except Exception as e:
+            return _workflow_invalid_response(
+                _workflow_exception_report(
+                    e,
+                    workflow_id=workflow_id,
+                    start_node_id=start_node_id,
+                )
+            )
+
+        if not bool(report.get("ok")):
+            return _workflow_invalid_response(report)
+
+        try:
+            from core.workflow_runtime import start_workflow
+            status = start_workflow(
+                workflow_id=workflow_id,
+                path=path,
+                data=wf_data,
+                listen_patterns=listen_patterns or ("chat.*",),
+                start_node_id=start_node_id,
+            )
+            return {
+                "ok": True,
+                "msg": "Workflow iniciado.",
+                "workflow_status": status,
+            }
+        except Exception as e:
+            return {"ok": False, "msg": f"Falha ao iniciar workflow: {e}"}
+
+    if action == "workflow_run_once":
+        workflow_id = (payload.get("workflow_id") or "").strip()
+        path = (payload.get("path") or "").strip()
+        wf_data = payload.get("data")
+        if wf_data is not None and not isinstance(wf_data, dict):
+            return {"ok": False, "msg": "Campo 'data' precisa ser objeto JSON."}
+        start_node_id = (payload.get("start_node_id") or "").strip()
+        initial_inputs = payload.get("initial_inputs")
+        if initial_inputs is not None and not isinstance(initial_inputs, dict):
+            return {"ok": False, "msg": "Campo 'initial_inputs' precisa ser objeto JSON."}
+        report = None
+        try:
+            from core.workflow_runtime import validate_workflow
+            report = validate_workflow(
+                workflow_id=workflow_id,
+                path=path,
+                data=wf_data,
+                start_node_id=start_node_id,
+            )
+        except Exception as e:
+            return _workflow_invalid_response(
+                _workflow_exception_report(
+                    e,
+                    workflow_id=workflow_id,
+                    start_node_id=start_node_id,
+                )
+            )
+
+        if not bool(report.get("ok")):
+            return _workflow_invalid_response(report)
+
+        try:
+            from core.workflow_runtime import run_workflow_once
+            outputs = run_workflow_once(
+                workflow_id=workflow_id,
+                path=path,
+                data=wf_data,
+                start_node_id=start_node_id,
+                initial_inputs=initial_inputs or {},
+            )
+            return {
+                "ok": True,
+                "msg": "Workflow executado (linear).",
+                "outputs": outputs,
+            }
+        except Exception as e:
+            return {"ok": False, "msg": f"Falha ao executar workflow linear: {e}"}
+
+    if action == "workflow_stop":
+        try:
+            from core.workflow_runtime import stop_workflow
+            status = stop_workflow()
+            return {"ok": True, "msg": "Workflow parado.", "workflow_status": status}
+        except Exception as e:
+            return {"ok": False, "msg": f"Falha ao parar workflow: {e}"}
+
+    if action == "workflow_status":
+        try:
+            from core.workflow_runtime import get_runtime_status
+            return {
+                "ok": True,
+                "msg": "Status do workflow.",
+                "workflow_status": get_runtime_status(),
+            }
+        except Exception as e:
+            return {"ok": False, "msg": f"Falha ao obter status do workflow: {e}"}
+
+    if action == "skill_registry_diagnostics":
+        ensure_loaded = bool(payload.get("ensure_loaded"))
+        snapshot = _get_skill_registry_snapshot(
+            ensure_loaded=ensure_loaded,
+            create_router=True,
+            include_entries=True,
+            include_skills=True,
+        )
+        if snapshot.get("error"):
+            return {
+                "ok": False,
+                "msg": f"Falha ao gerar diagnostico de skills: {snapshot['error']}",
+                "skill_registry": snapshot,
+            }
+        coverage = snapshot.get("coverage", {}) or {}
+        diagnostics = snapshot.get("diagnostics", {}) or {}
+        return {
+            "ok": True,
+            "msg": (
+                f"Diagnostico: {diagnostics.get('loaded', 0)}/{diagnostics.get('total', 0)} "
+                f"skills carregadas; manifests externos "
+                f"{coverage.get('with_external_manifest', 0)}/{coverage.get('total_skills', 0)}."
+            ),
+            "skill_registry": snapshot,
+        }
 
     if action == "comando":
         cmd = (payload.get("comando") or "").strip()
@@ -174,7 +574,7 @@ def _handle_control(data: Dict[str, Any]) -> Dict[str, Any]:
             )
         except Exception:
             pass
-        resp = processar_comando(cmd, None) or ""
+        resp = processar_comando_orquestrado(cmd, None, source=f"panel:{source or 'desconhecida'}") or ""
         if resp:
             print(f"[PAINEL] Resposta: {resp}")
         # Comandos vindos do pet nunca devem disparar TTS do backend aqui.
@@ -203,7 +603,7 @@ def iniciar_painel() -> None:
 
     flask.cli.show_server_banner = lambda *args, **kwargs: None
     app = Flask(__name__)
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+    socketio = SocketIO(app, cors_allowed_origins=_panel_cors_origins(), async_mode="threading")
     _socketio = socketio
 
     @app.get("/")
@@ -213,9 +613,7 @@ def iniciar_painel() -> None:
     @app.get("/health")
     def health_check():
         from config.state import STATE
-        from core import router as router_mod
         from core import voice as voice_mod
-        from config import env as env_mod
         try:
             import psutil
         except Exception:
@@ -231,9 +629,15 @@ def iniciar_painel() -> None:
             except Exception:
                 system = {}
 
-        router = getattr(router_mod, "_router", None)
+        router = _get_router_instance(create=False)
         skills_loaded = len(getattr(router, "skills", {}) or {})
         skills_failed = len(getattr(router, "skill_erros", {}) or {})
+        skill_registry_snapshot = _get_skill_registry_snapshot(
+            ensure_loaded=False,
+            create_router=False,
+            include_entries=True,
+            include_skills=True,
+        )
 
         tts_queue_size = None
         try:
@@ -257,6 +661,11 @@ def iniciar_painel() -> None:
         last_cap = STATE.get_ultima_captura()
         last_cap_exists = bool(last_cap and os.path.exists(last_cap))
         last_visao = STATE.get_ultima_visao() or ""
+        try:
+            from core.workflow_runtime import get_runtime_status
+            workflow_status = get_runtime_status()
+        except Exception:
+            workflow_status = {"status": "idle"}
 
         return {
             "status": "healthy",
@@ -272,6 +681,8 @@ def iniciar_painel() -> None:
                 "last_vision_ts": STATE.ultima_visao_ts or "",
                 "last_vision_len": len(last_visao),
             },
+            "workflow": workflow_status,
+            "skill_registry": skill_registry_snapshot,
             "system": system,
             "panel": {
                 "host": _panel_host(),
@@ -282,6 +693,9 @@ def iniciar_painel() -> None:
 
     @app.post("/control")
     def control_api():
+        max_payload = _panel_max_payload_bytes()
+        if request.content_length and request.content_length > max_payload:
+            return {"ok": False, "msg": "payload muito grande"}, 413
         if not _token_ok(request):
             return {"ok": False, "msg": "token invalido"}, 401
         data = request.get_json(silent=True) or {}
@@ -302,7 +716,9 @@ def iniciar_painel() -> None:
     def on_connect():
         token = request.args.get("token", "")
         required = _panel_token()
-        if required and token != required:
+        if (_panel_require_token() and not required) or (
+            required and not hmac.compare_digest(token, required)
+        ):
             return False
         emit("state_update", _last_state or _build_state())
 
@@ -317,7 +733,7 @@ def iniciar_painel() -> None:
                     _socketio.emit("state_update", _build_state())
             except Exception:
                 pass
-            time.sleep(1)
+            time.sleep(_panel_tick_sec())
 
     @socketio.on("control")
     def on_control(data):
@@ -413,7 +829,7 @@ def _render_html(token: str) -> str:
           <span class="text-xs px-2 py-1 bg-purple-500/20 rounded-full text-purple-300">Modo</span>
         </div>
         <div class="text-2xl font-bold" id="modo">-</div>
-        <div class="text-xs text-gray-400 mt-1">Modo de Operação</div>
+        <div class="text-xs text-gray-400 mt-1">Modo de Operacao</div>
       </div>
 
       <!-- STT Card -->
@@ -440,10 +856,10 @@ def _render_html(token: str) -> str:
       <div class="glass rounded-xl p-6 fade-in hover:border-purple-500/40 transition-all">
         <div class="flex items-center justify-between mb-2">
           <i class="fas fa-brain text-pink-400 text-2xl"></i>
-          <span class="text-xs px-2 py-1 bg-pink-500/20 rounded-full text-pink-300">Memória</span>
+          <span class="text-xs px-2 py-1 bg-pink-500/20 rounded-full text-pink-300">Memoria</span>
         </div>
         <div class="text-2xl font-bold" id="memoria">0</div>
-        <div class="text-xs text-gray-400 mt-1">Itens na Memória Curta</div>
+        <div class="text-xs text-gray-400 mt-1">Itens na Memoria Curta</div>
       </div>
 
     </div>
@@ -462,7 +878,7 @@ def _render_html(token: str) -> str:
       <div class="glass rounded-xl p-6">
         <div class="flex items-center mb-4">
           <i class="fas fa-eye text-blue-400 mr-3"></i>
-          <h3 class="text-lg font-semibold">Visão Automática</h3>
+          <h3 class="text-lg font-semibold">Visao Automatica</h3>
         </div>
         <div class="text-xl font-bold text-blue-300" id="visao-auto">-</div>
       </div>
@@ -473,7 +889,7 @@ def _render_html(token: str) -> str:
     <div class="glass rounded-xl p-6 mb-8">
       <h3 class="text-lg font-semibold mb-4 flex items-center">
         <i class="fas fa-bolt text-yellow-400 mr-2"></i>
-        Ações Rápidas
+        Acoes Rapidas
       </h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <button onclick="setModo('assistente')" class="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 px-4 py-3 rounded-lg font-medium transition-all transform hover:scale-105">
@@ -483,7 +899,7 @@ def _render_html(token: str) -> str:
           <i class="fas fa-video mr-2"></i>VTuber
         </button>
         <button onclick="limparMemoria()" class="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 px-4 py-3 rounded-lg font-medium transition-all transform hover:scale-105">
-          <i class="fas fa-trash mr-2"></i>Limpar Memória
+          <i class="fas fa-trash mr-2"></i>Limpar Memoria
         </button>
         <button onclick="recarregar()" class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 px-4 py-3 rounded-lg font-medium transition-all transform hover:scale-105">
           <i class="fas fa-sync mr-2"></i>Recarregar Skills
@@ -517,6 +933,33 @@ def _render_html(token: str) -> str:
       </div>
     </div>
 
+    <!-- Workflow Controls -->
+    <div class="glass rounded-xl p-6 mb-8">
+      <h3 class="text-lg font-semibold mb-4 flex items-center">
+        <i class="fas fa-diagram-project text-cyan-400 mr-2"></i>
+        Workflow Engine
+      </h3>
+      <div class="space-y-4">
+        <input
+          id="wf-id"
+          type="text"
+          placeholder="ID ou caminho em workflows/ (ex: templates/manual_system_monitor.json)"
+          class="w-full bg-gray-800/50 border border-purple-500/30 rounded-lg px-4 py-3 focus:outline-none focus:border-purple-500 transition-all"
+        >
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <button onclick="workflowList()" class="bg-gradient-to-r from-cyan-700 to-cyan-800 hover:from-cyan-600 hover:to-cyan-700 px-4 py-2 rounded-lg font-medium transition-all">Listar</button>
+          <button onclick="workflowLoad()" class="bg-gradient-to-r from-cyan-700 to-cyan-800 hover:from-cyan-600 hover:to-cyan-700 px-4 py-2 rounded-lg font-medium transition-all">Carregar</button>
+          <button onclick="workflowValidate()" class="bg-gradient-to-r from-amber-700 to-amber-800 hover:from-amber-600 hover:to-amber-700 px-4 py-2 rounded-lg font-medium transition-all">Validar</button>
+          <button onclick="workflowStart()" class="bg-gradient-to-r from-emerald-700 to-emerald-800 hover:from-emerald-600 hover:to-emerald-700 px-4 py-2 rounded-lg font-medium transition-all">Iniciar</button>
+          <button onclick="workflowRunOnce()" class="bg-gradient-to-r from-indigo-700 to-indigo-800 hover:from-indigo-600 hover:to-indigo-700 px-4 py-2 rounded-lg font-medium transition-all">Rodar 1x</button>
+          <button onclick="workflowStop()" class="bg-gradient-to-r from-rose-700 to-rose-800 hover:from-rose-600 hover:to-rose-700 px-4 py-2 rounded-lg font-medium transition-all">Parar</button>
+        </div>
+        <div id="wf-status" class="text-sm text-cyan-300">Status: -</div>
+        <div id="wf-result" class="text-sm text-gray-400 min-h-[20px]"></div>
+        <pre id="wf-validation" class="bg-gray-800/50 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-200 whitespace-pre-wrap hidden"></pre>
+      </div>
+    </div>
+
     <!-- Activity Log -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       
@@ -524,7 +967,7 @@ def _render_html(token: str) -> str:
       <div class="glass rounded-xl p-6">
         <h3 class="text-lg font-semibold mb-4 flex items-center">
           <i class="fas fa-history text-purple-400 mr-2"></i>
-          Último Comando
+          Ultimo Comando
         </h3>
         <div class="bg-gray-800/50 rounded-lg p-4 font-mono text-sm text-gray-300" id="ultimo-cmd">-</div>
       </div>
@@ -544,7 +987,7 @@ def _render_html(token: str) -> str:
     <div class="glass rounded-xl p-6 mt-4">
       <h3 class="text-lg font-semibold mb-4 flex items-center">
         <i class="fas fa-comment-dots text-green-400 mr-2"></i>
-        Última Resposta
+        Ultima Resposta
       </h3>
       <textarea 
         id="ultima-resposta" 
@@ -558,7 +1001,7 @@ def _render_html(token: str) -> str:
   <!-- Footer -->
   <div class="glass border-t border-purple-500/20 mt-12">
     <div class="max-w-7xl mx-auto px-6 py-4 text-center text-sm text-gray-400">
-      <p>Luna AI Dashboard • Desenvolvido com <i class="fas fa-heart text-pink-500"></i></p>
+      <p>Luna AI Dashboard - Desenvolvido com <i class="fas fa-heart text-pink-500"></i></p>
     </div>
   </div>
 
@@ -587,8 +1030,8 @@ def _render_html(token: str) -> str:
 
     socket.on("connect_error", (err) => {
       byId("conn-indicator").className = "w-3 h-3 bg-yellow-500 rounded-full animate-pulse";
-      byId("conn-text").textContent = "Erro de conexão";
-      byId("status").textContent = err && err.message ? err.message : "Falha de conexão";
+      byId("conn-text").textContent = "Erro de conexao";
+      byId("status").textContent = err && err.message ? err.message : "Falha de conexao";
     });
 
     // State updates
@@ -616,6 +1059,14 @@ def _render_html(token: str) -> str:
       } else {
         byId("visao-auto").textContent = "-";
       }
+      if (s.workflow) {
+        const w = s.workflow;
+        const loaded = (w.loaded_workflow && w.loaded_workflow.loaded) ? (w.loaded_workflow.id || "sim") : "nao";
+        const processing = w.queue_processing ? "on" : "off";
+        byId("wf-status").textContent = `Status: ${w.status || "-"} | loaded=${loaded} | queue=${w.queue_size || 0} | dropped=${w.queue_dropped || 0} | processing=${processing} | proc=${w.events_processed || 0} | fail=${w.events_failed || 0}`;
+      } else {
+        byId("wf-status").textContent = "Status: -";
+      }
     });
 
     socket.on("control_result", (r) => {
@@ -626,6 +1077,40 @@ def _render_html(token: str) -> str:
       
       if (r.resposta) {
         byId("ultima-resposta").value = r.resposta;
+      }
+
+      const validationBox = byId("wf-validation");
+      if (validationBox && !r.workflow_validation) {
+        validationBox.classList.add("hidden");
+      }
+
+      if (r.workflow_status) {
+        const ws = r.workflow_status;
+        const processing = ws.queue_processing ? "on" : "off";
+        byId("wf-result").textContent = `status=${ws.status || "-"} queue=${ws.queue_size || 0} dropped=${ws.queue_dropped || 0} processing=${processing} proc=${ws.events_processed || 0} fail=${ws.events_failed || 0}`;
+      } else if (Array.isArray(r.workflows)) {
+        byId("wf-result").textContent = r.workflows.map(w => `${w.id} (${w.nodes}n)`).join(", ");
+      } else if (r.workflow_validation) {
+        const v = r.workflow_validation || {};
+        const errors = Array.isArray(v.errors) ? v.errors : [];
+        const order = Array.isArray(v.execution_order) ? v.execution_order : [];
+        byId("wf-result").textContent = v.ok
+          ? `valido | nodes=${v.nodes || 0} | conexoes=${v.connections || 0}`
+          : `invalido | erros=${errors.length}`;
+        const box = validationBox;
+        if (box) {
+          if (v.ok) {
+            box.textContent = `Workflow valido\\nOrdem: ${order.join(" -> ") || "(vazia)"}`;
+          } else {
+            box.textContent = `Workflow invalido\\n` + errors.map((e, i) => `${i + 1}. ${e}`).join("\\n");
+          }
+          box.classList.remove("hidden");
+        }
+      } else if (r.workflow) {
+        byId("wf-result").textContent = `carregado: ${r.workflow.id || "-"} (${r.workflow.nodes || 0} nodes)`;
+      } else if (r.outputs) {
+        const keys = Object.keys(r.outputs || {});
+        byId("wf-result").textContent = `nodes executados: ${keys.join(", ")}`;
       }
       
       if (r.ok) {
@@ -641,7 +1126,7 @@ def _render_html(token: str) -> str:
     }
 
     function limparMemoria() {
-      if (confirm("Tem certeza que deseja limpar a memória curta?")) {
+      if (confirm("Tem certeza que deseja limpar a memoria curta?")) {
         socket.emit("control", { action: "limpar_memoria_curta", payload: {} });
       }
     }
@@ -658,6 +1143,36 @@ def _render_html(token: str) -> str:
       }
       socket.emit("control", { action: "comando", payload: { comando: cmd, falar: falar } });
       byId("cmd").value = "";
+    }
+
+    function _wfPayloadFromInput() {
+      const value = byId("wf-id").value.trim();
+      if (!value) return {};
+      if (value.includes("/") || value.includes("\\\\") || value.endsWith(".json")) {
+        return { path: value };
+      }
+      return { workflow_id: value };
+    }
+
+    function workflowList() {
+      socket.emit("control", { action: "workflow_list", payload: {} });
+    }
+    function workflowLoad() {
+      socket.emit("control", { action: "workflow_load", payload: _wfPayloadFromInput() });
+    }
+    function workflowValidate() {
+      socket.emit("control", { action: "workflow_validate", payload: _wfPayloadFromInput() });
+    }
+    function workflowStart() {
+      const payload = _wfPayloadFromInput();
+      payload.listen_patterns = ["chat.*"];
+      socket.emit("control", { action: "workflow_start", payload });
+    }
+    function workflowRunOnce() {
+      socket.emit("control", { action: "workflow_run_once", payload: _wfPayloadFromInput() });
+    }
+    function workflowStop() {
+      socket.emit("control", { action: "workflow_stop", payload: {} });
     }
 
     // Notification system
@@ -686,3 +1201,4 @@ def _render_html(token: str) -> str:
 </body>
 </html>"""
     return html.replace("__PANEL_TOKEN__", token)
+

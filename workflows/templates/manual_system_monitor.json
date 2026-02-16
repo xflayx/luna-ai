@@ -1,0 +1,35 @@
+{
+  "id": "manual_system_monitor",
+  "name": "Manual Input -> System Monitor",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "manual-input",
+      "config": {
+        "inputText": "status do pc"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "skill:system_monitor",
+      "config": {}
+    },
+    {
+      "id": "n3",
+      "type": "console-output",
+      "config": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from": { "nodeId": "n1", "port": "text" },
+      "to": { "nodeId": "n2", "port": "text" }
+    },
+    {
+      "id": "c2",
+      "from": { "nodeId": "n2", "port": "response" },
+      "to": { "nodeId": "n3", "port": "text" }
+    }
+  ]
+}

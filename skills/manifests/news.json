@@ -1,0 +1,41 @@
+{
+  "id": "news",
+  "name": "Noticias",
+  "description": "Busca noticias com SerpAPI e pode resumir a noticia em contexto.",
+  "version": "1.1.6",
+  "author": "Luna Team",
+  "category": "news",
+  "intents": [
+    "noticias",
+    "news"
+  ],
+  "gatilhos": [
+    "noticia",
+    "noticias",
+    "news",
+    "jornal",
+    "acontecendo"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Consulta de noticias ou pedido de resumo."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Lista resumida de noticias ou resumo de item."
+    }
+  ],
+  "config": {
+    "default_limit": {
+      "type": "number",
+      "label": "Limite padrao",
+      "description": "Numero padrao de noticias no retorno.",
+      "default": 3
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "chat_superchat_console",
+  "name": "Chat Superchat -> Console",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "console-output",
+      "config": {},
+      "event_filters": [
+        {
+          "event": "chat.message.superchat",
+          "condition": "event.get('text', '') != ''"
+        }
+      ]
+    }
+  ],
+  "connections": []
+}

@@ -1,6 +1,7 @@
 ﻿from core.voice import ouvir, falar
 from core.intent import detectar_intencao
-from core.router import processar_comando
+from core.command_orchestrator import processar_comando_orquestrado
+from core.workflow_runtime import autostart_workflow_from_env
 from core.realtime_panel import iniciar_painel, atualizar_estado
 from core.chat_ingest import start_chat_ingest
 from core.push_to_talk import iniciar_push_to_talk, parar_push_to_talk
@@ -27,11 +28,27 @@ logger = logging.getLogger("Luna")
 
 init_env()
 iniciar_painel()
-start_chat_ingest()
 
 def status(msg, **extra):
     logger.info(msg, extra=extra)
     atualizar_estado(status=msg)
+
+
+_workflow_autostart = autostart_workflow_from_env()
+if _workflow_autostart.get("enabled"):
+    if _workflow_autostart.get("started"):
+        wf_ref = (
+            _workflow_autostart.get("workflow_id")
+            or _workflow_autostart.get("path")
+            or "(workflow)"
+        )
+        patterns = ", ".join(_workflow_autostart.get("listen_patterns") or ())
+        status(f"🔁 Workflow auto-start ativo: {wf_ref} ({patterns})")
+    else:
+        erro = _workflow_autostart.get("error") or "erro desconhecido"
+        status(f"⚠️ Workflow auto-start falhou: {erro}")
+
+start_chat_ingest()
 
 
 def encerrar(sig=None, frame=None):
@@ -125,7 +142,7 @@ def handle_command(cmd: str):
         status("✍️ Modo direto: capturando dados da sequencia...")
 
     try:
-        resposta = processar_comando(cmd, intent)
+        resposta = processar_comando_orquestrado(cmd, intent, source="voice")
     except Exception:
         logger.warning("Falha ao processar comando")
         resposta = "Tive um problema ao processar isso. Tenta de novo?"
@@ -174,3 +191,4 @@ try:
             time.sleep(0.1)
 except KeyboardInterrupt:
     encerrar()
+

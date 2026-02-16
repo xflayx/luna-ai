@@ -1,0 +1,32 @@
+{
+  "id": "game_guide",
+  "name": "Game Guide",
+  "description": "Busca guias e tutoriais de jogos a partir do comando.",
+  "version": "1.0.0",
+  "author": "Luna Team",
+  "category": "gaming",
+  "intents": [
+    "game_guide"
+  ],
+  "gatilhos": [
+    "guia",
+    "tutorial",
+    "como conseguir",
+    "como passar",
+    "dicas de"
+  ],
+  "inputs": [
+    {
+      "id": "text",
+      "type": "string",
+      "description": "Pergunta do usuario sobre o jogo."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "response",
+      "type": "string",
+      "description": "Resposta com orientacao baseada na busca."
+    }
+  ]
+}

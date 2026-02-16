@@ -1,20 +1,4 @@
-import os
-
-
-def _panel_ui() -> str:
-    return os.getenv("LUNA_PANEL_UI", "modern").strip().lower()
-
-
-def _load_impl():
-    ui = _panel_ui()
-    if ui in {"simple", "basic", "legacy"}:
-        from core import realtime_panel_simple as impl
-        return impl
-    from core import realtime_panel_modern as impl
-    return impl
-
-
-_IMPL = _load_impl()
+from core import realtime_panel_modern as _IMPL
 
 
 def atualizar_estado(
